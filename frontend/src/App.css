@@ -1,0 +1,16 @@
+.app-shell {
+  align-items: center;
+  background: #f6f8fb;
+  color: #1f2937;
+  display: flex;
+  min-height: 100vh;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+}
+
+.app-shell h1 {
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 700;
+  margin: 0;
+}
