@@ -8,12 +8,16 @@ import skillup_workspace.dto.request.*;
 import skillup_workspace.dto.response.*;
 import skillup_workspace.entity.*;
 
+import java.util.List;
+
 @Mapper(componentModel = "spring")
 public interface CourseMapper {
 
-
     @Mapping(source = "courseId", target = "id")
     CourseResponseDTO toResponseDTO(Course course);
+
+    // Mapeo automático de listas
+    List<CourseResponseDTO> toResponseDTOList(List<Course> courses);
 
     @Mapping(source = "courseId", target = "id")
     @Mapping(source = "active", target = "isActive")
@@ -28,7 +32,6 @@ public interface CourseMapper {
     InstructorResponseDTO toInstructorResponseDTO(Instructor instructor);
 
     ContentModuleResponseDTO toContentModuleResponseDTO(ContentModule module);
-
 
     @Mapping(target = "courseId", ignore = true)
     @Mapping(target = "active", constant = "true")
