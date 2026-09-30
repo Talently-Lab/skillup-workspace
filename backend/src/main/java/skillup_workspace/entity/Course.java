@@ -70,7 +70,7 @@ public class Course {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "instructor_id")
-    private Instructor instructor; // <-- Agregado
+    private Instructor instructor;
 
     @Column(name = "is_active")
     private Boolean active = true;

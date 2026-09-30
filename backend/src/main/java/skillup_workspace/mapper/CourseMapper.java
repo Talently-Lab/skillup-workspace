@@ -16,7 +16,6 @@ public interface CourseMapper {
     @Mapping(source = "courseId", target = "id")
     CourseResponseDTO toResponseDTO(Course course);
 
-    // Mapeo automático de listas
     List<CourseResponseDTO> toResponseDTOList(List<Course> courses);
 
     @Mapping(source = "courseId", target = "id")
