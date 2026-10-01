@@ -10,15 +10,18 @@ import skillup_workspace.dto.response.LoginResponse;
 import skillup_workspace.dto.response.RegisterResponse;
 import skillup_workspace.entity.User;
 import skillup_workspace.service.AuthService;
+import skillup_workspace.security.JwtService;
 
 @RestController
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
     private final AuthService authService;
+    private final JwtService jwtService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, JwtService jwtService) {
         this.authService = authService;
+        this.jwtService = jwtService;
     }
 
     @PostMapping("/register")
@@ -45,8 +48,10 @@ public class AuthController {
         try {
             User user = authService.login(request);
 
+            String jwToken = jwtService.generateToken(user);
+
             LoginResponse response = new LoginResponse(
-                    "token-simulado-temporal",
+                    jwToken,
                     "Bearer",
                     user.getId(),
                     user.getEmail(),
