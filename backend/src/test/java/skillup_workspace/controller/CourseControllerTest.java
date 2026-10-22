@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -14,6 +15,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
 import skillup_workspace.dto.response.CourseResponseDTO;
+import skillup_workspace.exception.GlobalExceptionHandler;
 import skillup_workspace.service.CourseService;
 
 import java.util.List;
@@ -40,7 +42,9 @@ class CourseControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(courseController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(courseController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
         objectMapper = new ObjectMapper();
     }
 
@@ -64,6 +68,17 @@ class CourseControllerTest {
 
         mockMvc.perform(get("/api/v1/courses/{id}", courseId))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/courses/{id} - Debería retornar 400 si el ID no es numérico")
+    void getCourseById_ShouldReturnBadRequestWhenIdIsNotNumeric() throws Exception {
+        mockMvc.perform(get("/api/v1/courses/abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message").value("El parámetro 'id' tiene un formato inválido."));
+
+        Mockito.verify(courseService, Mockito.never()).getCourseById(any());
     }
 
     @Test

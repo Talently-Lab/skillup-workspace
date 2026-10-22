@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -14,6 +15,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import skillup_workspace.dto.request.LoginRequest;
 import skillup_workspace.dto.request.RegisterRequest;
 import skillup_workspace.entity.User;
+import skillup_workspace.exception.GlobalExceptionHandler;
 import skillup_workspace.security.JwtService;
 import skillup_workspace.service.AuthService;
 
@@ -41,7 +43,9 @@ class AuthControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(authController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(authController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
         objectMapper = new ObjectMapper();
 
         mockUser = new User();
@@ -72,6 +76,27 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.lastName").value("Pérez"))
                 .andExpect(jsonPath("$.email").value("juan.perez@example.com"))
                 .andExpect(jsonPath("$.role").value("USER"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/register - Debería retornar 400 si falta un campo obligatorio")
+    void register_ShouldReturnBadRequestWhenRequiredFieldsAreMissing() throws Exception {
+        String[][] requests = {
+                {"{\"lastName\":\"Pérez\",\"email\":\"juan.perez@example.com\",\"password\":\"password123\"}", "firstName"},
+                {"{\"firstName\":\"Juan\",\"email\":\"juan.perez@example.com\",\"password\":\"password123\"}", "lastName"},
+                {"{\"firstName\":\"Juan\",\"lastName\":\"Pérez\",\"password\":\"password123\"}", "email"}
+        };
+
+        for (String[] request : requests) {
+            mockMvc.perform(post("/api/v1/auth/register")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(request[0]))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString(request[1])));
+        }
+
+        Mockito.verify(authService, Mockito.never()).register(any(RegisterRequest.class));
     }
 
     @Test
