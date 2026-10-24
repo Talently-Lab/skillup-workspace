@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #315cff;
+  --color-primary-hover: #0034c8;
+  --color-primary-disabled: #bfcffd;
+  --color-secondary: #e8edff;
+  --color-secondary-hover: #edeffe;
+  --color-disabled: #eef1f6;
+  --color-background: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-ink: #1f2937;
+  --color-muted: #6b7280;
+  --color-border: #d9dde5;
+  --color-success: #2e9b68;
+  --color-danger: #d64545;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+
+  --radius-button: 12px;
+  --radius-card: 0.75rem;
+}
