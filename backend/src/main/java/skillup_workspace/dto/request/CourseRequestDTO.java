@@ -17,28 +17,37 @@ import java.util.List;
 @AllArgsConstructor
 public class CourseRequestDTO {
 
+    @NotBlank(message = "El campo title es obligatorio")
     private String title;
 
+    @NotBlank(message = "El campo summary es obligatorio")
     private String summary;
 
+    @NotBlank(message = "El campo description es obligatorio")
     private String description;
 
-    private String imageUrl;
-
+    @NotBlank(message = "El campo category es obligatorio")
     private String category;
 
+    @NotBlank(message = "El campo level es obligatorio")
     private String level;
 
-
+    @NotNull(message = "La duración en horas es obligatoria")
+    @Positive(message = "La duración en horas debe ser mayor a cero")
     private Integer durationHours;
 
+    @NotNull(message = "La duración en semanas es obligatoria")
+    @Positive(message = "La duración en semanas debe ser mayor a cero")
     private Integer durationWeeks;
+
+    @NotNull(message = "La modalidad es obligatoria")
+    private ModalityRequestDTO modality;
+
+    private String imageUrl;
 
     private LocalDate nextStartDate;
 
     private ScheduleRequestDTO schedule;
-
-    private ModalityRequestDTO modality;
 
     private String syllabusUrl;
 
