@@ -79,7 +79,7 @@ public class AuthController {
             )
     })
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         User user = authService.login(request);
         String jwToken = jwtService.generateToken(user);
 
