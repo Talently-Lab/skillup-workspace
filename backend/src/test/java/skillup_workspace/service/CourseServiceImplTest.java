@@ -19,6 +19,7 @@ import skillup_workspace.entity.Course;
 import skillup_workspace.exception.ResourceNotFoundException;
 import skillup_workspace.mapper.CourseMapper;
 import skillup_workspace.repository.CourseRepository;
+import skillup_workspace.repository.EnrollmentRepository;
 import skillup_workspace.service.impl.CourseServiceImpl;
 
 import java.util.List;
@@ -34,6 +35,9 @@ class CourseServiceImplTest {
 
     @Mock
     private CourseRepository courseRepository;
+
+    @Mock
+    private EnrollmentRepository enrollmentRepository;
 
     @Mock
     private CourseMapper courseMapper;
@@ -307,16 +311,17 @@ class CourseServiceImplTest {
     class DeleteCourseTests {
 
         @Test
-        @DisplayName("deleteCourse - Debería realizar un borrado lógico marcando isActive = false")
-        void deleteCourse_WhenCourseExists_ShouldSetIsActiveToFalse() {
+        @DisplayName("deleteCourse - Debería eliminar físicamente el curso existente")
+        void deleteCourse_WhenCourseExists_ShouldDeleteCourse() {
 
             given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
-            given(courseRepository.save(mockCourse)).willReturn(mockCourse);
+            given(enrollmentRepository.existsByCourse_Id(1L)).willReturn(false);
 
             courseService.deleteCourse(1L);
 
-            assertFalse(mockCourse.getIsActive());
-            verify(courseRepository, times(1)).save(mockCourse);
+            assertTrue(mockCourse.getIsActive());
+            verify(courseRepository).delete(mockCourse);
+            verify(courseRepository, never()).save(any());
         }
 
         @Test
@@ -330,7 +335,18 @@ class CourseServiceImplTest {
                     () -> courseService.deleteCourse(1L)
             );
 
-            verify(courseRepository, never()).save(any());
+            verify(courseRepository, never()).delete(any());
+        }
+
+        @Test
+        @DisplayName("deleteCourse - No debería eliminar un curso con inscripciones asociadas")
+        void deleteCourse_WhenEnrollmentsExist_ShouldThrowConflict() {
+            given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
+            given(enrollmentRepository.existsByCourse_Id(1L)).willReturn(true);
+
+            assertThrows(IllegalStateException.class, () -> courseService.deleteCourse(1L));
+
+            verify(courseRepository, never()).delete(any());
         }
     }
 }

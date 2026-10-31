@@ -84,7 +84,8 @@ class AuthControllerTest {
         String[][] requests = {
                 {"{\"lastName\":\"Pérez\",\"email\":\"juan.perez@example.com\",\"password\":\"password123\"}", "firstName"},
                 {"{\"firstName\":\"Juan\",\"email\":\"juan.perez@example.com\",\"password\":\"password123\"}", "lastName"},
-                {"{\"firstName\":\"Juan\",\"lastName\":\"Pérez\",\"password\":\"password123\"}", "email"}
+                {"{\"firstName\":\"Juan\",\"lastName\":\"Pérez\",\"password\":\"password123\"}", "email"},
+                {"{\"firstName\":\"Juan\",\"lastName\":\"Pérez\",\"email\":\"juan.perez@example.com\"}", "password"}
         };
 
         for (String[] request : requests) {
@@ -93,10 +94,61 @@ class AuthControllerTest {
                             .content(request[0]))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.status").value(400))
-                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString(request[1])));
+                    .andExpect(jsonPath("$.message." + request[1]).exists());
         }
 
         Mockito.verify(authService, Mockito.never()).register(any(RegisterRequest.class));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/login - Debería retornar 400 con campos faltantes o vacíos")
+    void login_ShouldReturnBadRequestWhenRequiredFieldsAreMissingOrBlank() throws Exception {
+        String[] requests = {
+                "{\"password\":\"password123\"}",
+                "{\"email\":\"juan.perez@example.com\"}",
+                "{\"email\":\" \",\"password\":\"password123\"}",
+                "{\"email\":\"juan.perez@example.com\",\"password\":\" \"}"
+        };
+
+        for (String request : requests) {
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(request))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400));
+        }
+
+        Mockito.verify(authService, Mockito.never()).login(any(LoginRequest.class));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/login - Debería retornar 401 con credenciales incorrectas")
+    void login_ShouldReturnUnauthorizedWhenCredentialsAreIncorrect() throws Exception {
+        given(authService.login(any(LoginRequest.class)))
+                .willThrow(new SecurityException("Credenciales inválidas"));
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"juan.perez@example.com\",\"password\":\"incorrecta\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/auth/register - No debería exponer mensajes internos")
+    void register_ShouldHideInternalExceptionMessages() throws Exception {
+        given(authService.register(any(RegisterRequest.class)))
+                .willThrow(new IllegalArgumentException("rawPassword cannot be null"));
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"firstName\":\"Juan\",\"lastName\":\"Pérez\","
+                                + "\"email\":\"juan.perez@example.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("La solicitud contiene datos inválidos."))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("rawPassword")
+                )));
     }
 
     @Test

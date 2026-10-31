@@ -43,7 +43,12 @@ public class AuthController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "Datos de entrada inválidos o email ya registrado",
+                    description = "Datos de entrada inválidos",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "409",
+                    description = "El correo electrónico ya está registrado",
                     content = @Content
             )
     })
@@ -71,6 +76,11 @@ public class AuthController {
                     responseCode = "200",
                     description = "Autenticación exitosa",
                     content = @Content(schema = @Schema(implementation = LoginResponse.class))
+            ),
+            @ApiResponse(
+                    responseCode = "400",
+                    description = "Email o contraseña faltante o inválido",
+                    content = @Content
             ),
             @ApiResponse(
                     responseCode = "401",

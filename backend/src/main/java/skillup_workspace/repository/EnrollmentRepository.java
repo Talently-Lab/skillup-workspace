@@ -7,4 +7,5 @@ import skillup_workspace.entity.User;
 
 public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
     boolean existsByUserAndCourse(User user, Course course);
+    boolean existsByCourse_Id(Long courseId);
 }

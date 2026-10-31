@@ -12,6 +12,7 @@ import skillup_workspace.entity.Course;
 import skillup_workspace.exception.ResourceNotFoundException;
 import skillup_workspace.mapper.CourseMapper;
 import skillup_workspace.repository.CourseRepository;
+import skillup_workspace.repository.EnrollmentRepository;
 import skillup_workspace.service.CourseService;
 
 import java.util.List;
@@ -22,6 +23,7 @@ import java.util.Objects;
 public class CourseServiceImpl implements CourseService {
 
     private final CourseRepository courseRepository;
+    private final EnrollmentRepository enrollmentRepository;
     private final CourseMapper courseMapper;
 
     @Override
@@ -70,8 +72,13 @@ public class CourseServiceImpl implements CourseService {
         Course course = courseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Curso no encontrado con el id: " + id));
 
-        course.setIsActive(false);
-        courseRepository.save(course);
+        if (enrollmentRepository.existsByCourse_Id(id)) {
+            throw new IllegalStateException(
+                    "No se puede eliminar el curso porque tiene inscripciones asociadas."
+            );
+        }
+
+        courseRepository.delete(course);
     }
     private boolean checkIsAdmin() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

@@ -86,7 +86,12 @@ public class CourseController {
             ),
             @ApiResponse(
                     responseCode = "401",
-                    description = "No autorizado",
+                    description = "Autenticación requerida o token inválido, mal formado o expirado",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = "Token válido, pero el usuario no tiene rol ADMIN",
                     content = @Content
             )
     })
@@ -116,6 +121,16 @@ public class CourseController {
                     responseCode = "404",
                     description = "Curso no encontrado",
                     content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Autenticación requerida o token inválido, mal formado o expirado",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = "Token válido, pero el usuario no tiene rol ADMIN",
+                    content = @Content
             )
     })
     @PutMapping("/{id}")
@@ -139,6 +154,21 @@ public class CourseController {
             @ApiResponse(
                     responseCode = "404",
                     description = "Curso no encontrado",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "409",
+                    description = "No se puede eliminar el curso porque tiene inscripciones asociadas",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "401",
+                    description = "Autenticación requerida o token inválido, mal formado o expirado",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "403",
+                    description = "Token válido, pero el usuario no tiene rol ADMIN",
                     content = @Content
             )
     })
