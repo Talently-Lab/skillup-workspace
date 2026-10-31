@@ -1,0 +1,38 @@
+export const courses = [
+  {
+    id: 1,
+    image: '/images/curso-ia.jpg',
+    category: 'Inteligencia artificial',
+    title: 'Inteligencia artificial',
+    description: 'Explorá las herramientas de IA y aplicalas en proyectos reales.',
+    level: 'Inicial',
+    duration: '6 semanas',
+  },
+  {
+    id: 2,
+    image: '/images/curso-marketing.jpg',
+    category: 'Marketing',
+    title: 'Marketing digital',
+    description: 'Aprendé estrategias para crear y gestionar campañas digitales efectivas.',
+    level: 'Inicial',
+    duration: '30 semanas',
+  },
+  {
+    id: 3,
+    image: '/images/curso-ecommerce.jpg',
+    category: 'Negocios',
+    title: 'E-commerce',
+    description: 'Conocé las claves para crear y gestionar tu tienda online.',
+    level: 'Inicial',
+    duration: '8 semanas',
+  },
+  {
+    id: 4,
+    image: '/images/curso-web.jpg',
+    category: 'Desarrollo',
+    title: 'Desarrollo web',
+    description: 'Aprendé los fundamentos de la programación y creá tus propias webs.',
+    level: 'Inicial',
+    duration: '10 semanas',
+  },
+]
