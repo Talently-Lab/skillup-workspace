@@ -1,0 +1,111 @@
+import { useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import AuthLayout from '../components/layout/AuthLayout'
+import Input from '../components/ui/Input'
+import Checkbox from '../components/ui/Checkbox'
+import Button from '../components/ui/Button'
+import { useAuth } from '../context/useAuth'
+import { validateLogin } from '../utils/validators'
+import { getAuthErrorMessage } from '../services/authService'
+import { getHomeForRole } from '../utils/roles'
+
+export default function Login() {
+  const { login } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  const [form, setForm] = useState({ email: '', password: '' })
+  const [remember, setRemember] = useState(false)
+  const [errors, setErrors] = useState({})
+  const [serverError, setServerError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleChange = (event) => {
+    const { name, value } = event.target
+    setForm((prev) => ({ ...prev, [name]: value }))
+    setErrors((prev) => ({ ...prev, [name]: undefined }))
+    setServerError('')
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+
+    const validationErrors = validateLogin(form)
+    setErrors(validationErrors)
+    if (Object.keys(validationErrors).length > 0) return
+
+    setLoading(true)
+    try {
+      const user = await login(form, remember)
+      navigate(getHomeForRole(user?.role), { replace: true })
+    } catch (error) {
+      setServerError(getAuthErrorMessage(error))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <AuthLayout
+      prompt="¿No tenés cuenta?"
+      linkLabel="Registrate"
+      linkTo="/registro"
+      legalIntro="Al iniciar sesión, estás aceptando nuestros"
+      image="/images/login.jpg"
+    >
+      <h1 className="text-2xl font-bold text-ink">Iniciar sesión</h1>
+      <p className="mt-1 text-sm text-muted">
+        Ingresá con tu cuenta para acceder a la plataforma.
+      </p>
+
+      {location.state?.registered && (
+        <p role="status" className="mt-4 rounded-xl bg-success/10 px-4 py-3 text-sm text-success">
+          Tu cuenta se creó correctamente. Ya podés iniciar sesión.
+        </p>
+      )}
+
+      <form onSubmit={handleSubmit} noValidate className="mt-6 flex flex-col gap-5">
+        <Input
+          label="Correo electrónico"
+          name="email"
+          type="email"
+          autoComplete="email"
+          placeholder="m@example.com"
+          value={form.email}
+          onChange={handleChange}
+          error={errors.email}
+        />
+
+        <Input
+          label="Contraseña"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          placeholder="Ingresá tu contraseña"
+          value={form.password}
+          onChange={handleChange}
+          error={errors.password}
+        />
+
+        <div className="flex items-center justify-between">
+          <Checkbox
+            label="Recordarme"
+            checked={remember}
+            onChange={(event) => setRemember(event.target.checked)}
+          />
+          <span className="text-xs text-primary underline">¿Olvidaste tu contraseña?</span>
+        </div>
+
+        {serverError && (
+          <p role="alert" className="rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger">
+            {serverError}
+          </p>
+        )}
+
+        <Button type="submit" disabled={loading} className="w-full">
+          {loading ? 'Ingresando...' : 'Iniciar sesión'}
+        </Button>
+      </form>
+    </AuthLayout>
+  )
+}
