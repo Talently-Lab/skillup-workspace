@@ -15,17 +15,22 @@ Aplicacion frontend de SkillUp Campus creada con React + Vite usando JavaScript.
    npm install
    ```
 
-2. Crear un archivo `.env` a partir de `.env.example` si necesitás configurar variables locales:
+2. Crear `.env.local` en la raiz de `frontend/` a partir de `.env.example` si
+   necesitás configurar variables locales:
 
    ```bash
-   cp .env.example .env
+   cp .env.example .env.local
    ```
 
-   Variable disponible:
+   Vite carga las variables desde la raiz del proyecto; `.env.example` es solo
+   una plantilla y no se carga directamente. `.env.local` no se versiona.
+   La variable `VITE_API_BASE_URL` debe contener la URL base del backend,
+   incluyendo `/api/v1`. Para desarrollar contra un backend local, usar
+   `http://localhost:8080/api/v1`.
 
-   ```env
-   VITE_API_BASE_URL=http://localhost:8080
-   ```
+   En Netlify, configurar `VITE_API_BASE_URL` con
+   `https://skillup-workspace.onrender.com/api/v1` en las variables de entorno
+   del sitio y volver a desplegar.
 
 ## Comandos
 
@@ -69,4 +74,6 @@ React + Vite + Tailwind CSS + React Router + Axios
 
 ## Variables de entorno
 
-Copiar `.env.example` a `.env` y completar `VITE_API_BASE_URL` con la URL del backend (por defecto `http://localhost:8080`).
+`src/services/api.js` usa `VITE_API_BASE_URL` como base de todas las peticiones
+HTTP. Los archivos `.env`, `.env.local` y `.env.example` deben estar en la raiz
+de `frontend/`, no dentro de `src/`.
