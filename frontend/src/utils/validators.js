@@ -19,7 +19,6 @@ export function validateRegister({
   lastName,
   email,
   password,
-  confirmPassword,
 }) {
   const errors = {}
 
@@ -33,12 +32,6 @@ export function validateRegister({
     errors.password = 'Ingresá una contraseña'
   } else if (password.length < 8) {
     errors.password = 'La contraseña debe tener mínimo 8 caracteres'
-  }
-
-  if (!confirmPassword) {
-    errors.confirmPassword = 'Repetí tu contraseña'
-  } else if (password !== confirmPassword) {
-    errors.confirmPassword = 'Las contraseñas no coinciden'
   }
 
   return errors

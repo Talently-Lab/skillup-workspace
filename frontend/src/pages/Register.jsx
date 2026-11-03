@@ -11,7 +11,6 @@ const initialForm = {
   lastName: '',
   email: '',
   password: '',
-  confirmPassword: '',
 }
 
 export default function Register() {
@@ -37,9 +36,12 @@ export default function Register() {
 
     setLoading(true)
     try {
-      // confirmPassword es solo una validación del front: no se envía
-      const { _confirmPassword, ...data } = form
-      await register(data)
+      await register({
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        password: form.password,
+      })
       navigate('/login', { replace: true, state: { registered: true } })
     } catch (error) {
       setServerError(getAuthErrorMessage(error))
@@ -96,16 +98,6 @@ export default function Register() {
           value={form.password}
           onChange={handleChange}
           error={errors.password}
-        />
-        <Input
-          label="Repetir contraseña"
-          name="confirmPassword"
-          type="password"
-          autoComplete="new-password"
-          placeholder="Repetí tu contraseña"
-          value={form.confirmPassword}
-          onChange={handleChange}
-          error={errors.confirmPassword}
         />
 
         {serverError && (
