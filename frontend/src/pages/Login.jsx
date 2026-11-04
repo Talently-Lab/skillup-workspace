@@ -37,7 +37,13 @@ export default function Login() {
     setLoading(true)
     try {
       const user = await login(form, remember)
-      navigate(getHomeForRole(user?.role), { replace: true })
+      const returnTo = location.state?.from
+      navigate(
+        returnTo
+          ? `${returnTo.pathname}${returnTo.search ?? ''}${returnTo.hash ?? ''}`
+          : getHomeForRole(user?.role),
+        { replace: true },
+      )
     } catch (error) {
       setServerError(getAuthErrorMessage(error))
     } finally {
