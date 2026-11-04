@@ -6,7 +6,7 @@ import StudentSidebar from '../components/student/StudentSidebar'
 import Navbar from '../components/layout/Navbar'
 import { useAuth } from '../context/useAuth'
 import { ROLES, getHomeForRole } from '../utils/roles'
-import { getMyEnrollments } from '../services/courseService'
+import { getCourses, getMyEnrollments } from '../services/courseService'
 
 export default function StudentDashboard() {
   const { user, isAuthenticated } = useAuth()
@@ -26,9 +26,15 @@ export default function StudentDashboard() {
     if (!isAuthenticated || user?.role !== ROLES.STUDENT) return undefined
 
     let active = true
-    getMyEnrollments()
-      .then((result) => {
-        if (active) setEnrollments(result)
+    Promise.all([getMyEnrollments(), getCourses()])
+      .then(([studentEnrollments, availableCourses]) => {
+        if (!active) return
+        const availableCourseIds = new Set(availableCourses.map((course) => String(course.id)))
+        setEnrollments(
+          studentEnrollments.filter((enrollment) =>
+            availableCourseIds.has(String(enrollment.courseId)),
+          ),
+        )
       })
       .catch(() => {
         if (active) setEnrollmentsError(true)
@@ -134,7 +140,7 @@ export default function StudentDashboard() {
                   </button>
                 </div>
               ) : filteredEnrollments.length > 0 ? (
-                <div className="grid gap-4 xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-[30px] min-[1156px]:grid-cols-[repeat(2,minmax(0,376px))]">
                   {filteredEnrollments.map((enrollment) => (
                     <StudentEnrollmentCard enrollment={enrollment} key={enrollment.id} />
                   ))}
