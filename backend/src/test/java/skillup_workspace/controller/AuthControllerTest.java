@@ -170,6 +170,8 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.token").value(fakeToken))
                 .andExpect(jsonPath("$.type").value("Bearer"))
                 .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.firstName").value("Juan"))
+                .andExpect(jsonPath("$.lastName").value("Pérez"))
                 .andExpect(jsonPath("$.email").value("juan.perez@example.com"))
                 .andExpect(jsonPath("$.role").value("USER"));
     }

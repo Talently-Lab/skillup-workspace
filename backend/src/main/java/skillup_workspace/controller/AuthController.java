@@ -97,6 +97,8 @@ public class AuthController {
                 jwToken,
                 "Bearer",
                 user.getId(),
+                user.getFirstName(),
+                user.getLastName(),
                 user.getEmail(),
                 user.getRole()
         );
