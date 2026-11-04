@@ -1,6 +1,7 @@
 package skillup_workspace.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -23,6 +24,7 @@ import skillup_workspace.storage.R2StorageService;
 @RestController
 @RequestMapping("/api/v1/uploads")
 @RequiredArgsConstructor
+@Hidden
 @Tag(name = "Archivos", description = "Carga validada de imágenes y programas públicos de cursos en R2")
 public class UploadController {
 

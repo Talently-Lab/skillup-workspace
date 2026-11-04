@@ -21,6 +21,47 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Schema(example = """
+        {
+          "title": "Diseño UX/UI Avanzado",
+          "summary": "Aprendé los fundamentos del diseño de experiencias digitales y creá interfaces centradas en el usuario.",
+          "description": "Este curso te va a permitir comprender el proceso de diseño desde la investigación hasta la creación de prototipos.",
+          "category": "Diseño UX/UI",
+          "level": "Avanzado",
+          "durationHours": 40,
+          "durationWeeks": 14,
+          "nextStartDate": "2026-11-01",
+          "schedule": {
+            "days": "Martes y Jueves",
+            "startTime": "18:00",
+            "endTime": "20:00"
+          },
+          "modality": {
+            "type": "EN VIVO",
+            "frequency": "2 clases semanales",
+            "durationPerClass": "2hs"
+          },
+          "learningGoals": [
+            "Comprender las necesidades del usuario.",
+            "Diseñar interfaces funcionales y atractivas.",
+            "Crear prototipos interactivos complejos."
+          ],
+          "objectives": [
+            "Dominar metodologías de investigación con usuarios.",
+            "Aprender a diseñar Wireframes y Prototipos en Figma."
+          ],
+          "contentModules": [
+            {
+              "moduleNumber": 1,
+              "title": "Introducción al Diseño UX",
+              "topics": [
+                "¿Qué es UX/UI?",
+                "Metodología Design Thinking"
+              ]
+            }
+          ]
+        }
+        """)
 public class CourseRequestDTO {
 
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED)

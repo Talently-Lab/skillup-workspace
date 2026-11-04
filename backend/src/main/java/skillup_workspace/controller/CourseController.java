@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Encoding;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -23,6 +25,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.*;
+import skillup_workspace.dto.request.CourseMultipartRequestDTO;
 import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.request.CourseStatusUpdateRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
@@ -85,12 +88,66 @@ public class CourseController {
     @Operation(
             summary = "Crear un nuevo curso",
             description = """
-                    Registra un curso mediante multipart/form-data. La parte `course` contiene JSON
-                    que se deserializa independientemente del Content-Type asignado a esa parte.
-                    con los datos del curso; `image` (imagen compatible con ImageIO) y `syllabus`
-                    (PDF) son opcionales. Las imágenes se convierten a WebP antes de guardarse en R2.
-                    Los enlaces de imagen y programa son administrados por el servidor.
+                    Crea un curso en POST /api/v1/courses usando multipart/form-data. La parte `course`
+                    es obligatoria y contiene el JSON de CourseRequestDTO. Las partes opcionales `image`
+                    y `syllabus` aceptan, respectivamente, una imagen compatible con ImageIO y un PDF.
+                    El servidor convierte la imagen a WebP, guarda los archivos en R2 y administra sus enlaces.
                     """,
+            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    description = "Datos del curso y archivos opcionales",
+                    required = true,
+                    content = @Content(
+                            mediaType = MediaType.MULTIPART_FORM_DATA_VALUE,
+                            schema = @Schema(implementation = CourseMultipartRequestDTO.class),
+                            examples = @ExampleObject(
+                                    name = "Crear curso de Diseño UX/UI",
+                                    value = """
+                                            {
+                                              "course": {
+                                                "title": "Diseño UX/UI Avanzado",
+                                                "summary": "Aprendé los fundamentos del diseño de experiencias digitales y creá interfaces centradas en el usuario.",
+                                                "description": "Este curso te va a permitir comprender el proceso de diseño desde la investigación hasta la creación de prototipos.",
+                                                "category": "Diseño UX/UI",
+                                                "level": "Avanzado",
+                                                "durationHours": 40,
+                                                "durationWeeks": 14,
+                                                "nextStartDate": "2026-11-01",
+                                                "schedule": {
+                                                  "days": "Martes y Jueves",
+                                                  "startTime": "18:00",
+                                                  "endTime": "20:00"
+                                                },
+                                                "modality": {
+                                                  "type": "EN VIVO",
+                                                  "frequency": "2 clases semanales",
+                                                  "durationPerClass": "2hs"
+                                                },
+                                                "learningGoals": [
+                                                  "Comprender las necesidades del usuario.",
+                                                  "Diseñar interfaces funcionales y atractivas.",
+                                                  "Crear prototipos interactivos complejos."
+                                                ],
+                                                "objectives": [
+                                                  "Dominar metodologías de investigación con usuarios.",
+                                                  "Aprender a diseñar Wireframes y Prototipos en Figma."
+                                                ],
+                                                "contentModules": [
+                                                  {
+                                                    "moduleNumber": 1,
+                                                    "title": "Introducción al Diseño UX",
+                                                    "topics": [
+                                                      "¿Qué es UX/UI?",
+                                                      "Metodología Design Thinking"
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            }
+                                            """
+                            ),
+                            encoding = @Encoding(name = "course", contentType = MediaType.APPLICATION_JSON_VALUE)
+                    )
+            ),
             security = @SecurityRequirement(name = "bearerAuth")
     )
     @ApiResponses(value = {
@@ -144,12 +201,67 @@ public class CourseController {
     @Operation(
             summary = "Actualizar un curso existente",
             description = """
-                    Actualiza un curso mediante multipart/form-data. La parte `course` contiene JSON
-                    que se deserializa independientemente del Content-Type asignado a esa parte.
-                    `image` y `syllabus` son opcionales. La imagen se convierte a WebP.
-                    Si se omite un archivo, se conserva el recurso actual. Los enlaces de imagen y programa
-                    son administrados por el servidor.
+                    Actualiza el curso indicado por {id} usando PUT /api/v1/courses/{id} y multipart/form-data.
+                    La parte obligatoria `course` contiene el JSON completo de CourseRequestDTO. Las partes
+                    opcionales `image` y `syllabus` aceptan, respectivamente, una imagen compatible con
+                    ImageIO y un PDF. La imagen se convierte a WebP. Si se omite un archivo, se conserva el
+                    recurso actual. Los enlaces de imagen y programa son administrados por el servidor.
                     """,
+            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    description = "Datos del curso y archivos opcionales. Si no se envía un archivo, se conserva el actual.",
+                    required = true,
+                    content = @Content(
+                            mediaType = MediaType.MULTIPART_FORM_DATA_VALUE,
+                            schema = @Schema(implementation = CourseMultipartRequestDTO.class),
+                            examples = @ExampleObject(
+                                    name = "Actualizar curso de Diseño UX/UI",
+                                    value = """
+                                            {
+                                              "course": {
+                                                "title": "Diseño UX/UI Avanzado",
+                                                "summary": "Aprendé los fundamentos del diseño de experiencias digitales y creá interfaces centradas en el usuario.",
+                                                "description": "Este curso te va a permitir comprender el proceso de diseño desde la investigación hasta la creación de prototipos.",
+                                                "category": "Diseño UX/UI",
+                                                "level": "Avanzado",
+                                                "durationHours": 40,
+                                                "durationWeeks": 14,
+                                                "nextStartDate": "2026-11-01",
+                                                "schedule": {
+                                                  "days": "Martes y Jueves",
+                                                  "startTime": "18:00",
+                                                  "endTime": "20:00"
+                                                },
+                                                "modality": {
+                                                  "type": "EN VIVO",
+                                                  "frequency": "2 clases semanales",
+                                                  "durationPerClass": "2hs"
+                                                },
+                                                "learningGoals": [
+                                                  "Comprender las necesidades del usuario.",
+                                                  "Diseñar interfaces funcionales y atractivas.",
+                                                  "Crear prototipos interactivos complejos."
+                                                ],
+                                                "objectives": [
+                                                  "Dominar metodologías de investigación con usuarios.",
+                                                  "Aprender a diseñar Wireframes y Prototipos en Figma."
+                                                ],
+                                                "contentModules": [
+                                                  {
+                                                    "moduleNumber": 1,
+                                                    "title": "Introducción al Diseño UX",
+                                                    "topics": [
+                                                      "¿Qué es UX/UI?",
+                                                      "Metodología Design Thinking"
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            }
+                                            """
+                            ),
+                            encoding = @Encoding(name = "course", contentType = MediaType.APPLICATION_JSON_VALUE)
+                    )
+            ),
             security = @SecurityRequirement(name = "bearerAuth")
     )
     @ApiResponses(value = {
