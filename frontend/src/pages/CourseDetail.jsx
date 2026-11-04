@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, CheckCircle2, Clock3, Download, Heart, Radio, Signal, Video } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Clock3, Download, Heart, Radio, Signal, Video, X } from 'lucide-react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import {
@@ -7,6 +7,7 @@ import {
   enrollInCourse,
   getCourse,
   getCourseFavorite,
+  getMyEnrollments,
   removeCourseFavorite,
 } from '../services/courseService'
 import { getErrorMessage } from '../utils/apiErrors'
@@ -68,6 +69,11 @@ export default function CourseDetail() {
   const [courseResult, setCourseResult] = useState({ id: null, course: null, error: '' })
   const [activeTab, setActiveTab] = useState('description')
   const [enrolling, setEnrolling] = useState(false)
+  const [showCourseComingSoon, setShowCourseComingSoon] = useState(false)
+  const [enrollmentStatus, setEnrollmentStatus] = useState({
+    courseId: null,
+    status: 'idle',
+  })
   const [enrollmentError, setEnrollmentError] = useState(
     () => location.state?.enrollmentError ?? '',
   )
@@ -96,6 +102,40 @@ export default function CourseDetail() {
   const loading = courseResult.id !== id
   const course = loading ? null : courseResult.course
   const error = loading ? '' : courseResult.error
+  const courseId = course?.id
+
+  useEffect(() => {
+    if (!courseId || !isAuthenticated || user?.role !== 'ALUMNO') return undefined
+    let active = true
+    getMyEnrollments()
+      .then((enrollments) => {
+        if (active) {
+          setEnrollmentStatus({
+            courseId,
+            status: enrollments.some(
+              (enrollment) => String(enrollment.courseId) === String(courseId),
+            ) ? 'enrolled' : 'available',
+          })
+        }
+      })
+      .catch(() => {
+        if (active) setEnrollmentStatus({ courseId, status: 'error' })
+      })
+    return () => {
+      active = false
+    }
+  }, [courseId, isAuthenticated, user?.role])
+
+  useEffect(() => {
+    if (!showCourseComingSoon) return undefined
+
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setShowCourseComingSoon(false)
+    }
+
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [showCourseComingSoon])
 
   useEffect(() => {
     if (!course || user?.role !== 'ALUMNO' || !isAuthenticated) return undefined
@@ -148,6 +188,15 @@ export default function CourseDetail() {
   const favoriteLoading =
     currentFavoriteState?.status === 'loading' ||
     (isAuthenticated && user?.role === 'ALUMNO' && !currentFavoriteState)
+  const currentEnrollmentStatus = enrollmentStatus.courseId === course?.id
+    ? enrollmentStatus.status
+    : 'loading'
+  const checkingEnrollment = isAuthenticated && user?.role === 'ALUMNO'
+    && currentEnrollmentStatus === 'loading'
+  const isEnrolled = isAuthenticated && user?.role === 'ALUMNO'
+    && currentEnrollmentStatus === 'enrolled'
+  const enrollmentStatusError = isAuthenticated && user?.role === 'ALUMNO'
+    && currentEnrollmentStatus === 'error'
 
   const handleEnroll = async () => {
     setEnrollmentError('')
@@ -325,14 +374,33 @@ export default function CourseDetail() {
           )}
 
           <div className="mt-4 flex w-full flex-wrap items-center gap-3">
-            <button
-              className="min-h-10 rounded-button bg-primary px-6 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={enrolling || !courseIsActive}
-              onClick={handleEnroll}
-              type="button"
-            >
-              {!courseIsActive ? 'Curso no disponible' : enrolling ? 'Procesando inscripción...' : 'Inscribirme'}
-            </button>
+            {isEnrolled && (
+              <button
+                className="min-h-10 rounded-button bg-primary px-6 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover"
+                onClick={() => setShowCourseComingSoon(true)}
+                type="button"
+              >
+                Ir al curso
+              </button>
+            )}
+            {!isEnrolled && !checkingEnrollment && (
+              <button
+                className="min-h-10 rounded-button bg-primary px-6 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={enrolling || !courseIsActive}
+                onClick={handleEnroll}
+                type="button"
+              >
+                {!courseIsActive ? 'Curso no disponible' : enrolling ? 'Procesando inscripción...' : 'Inscribirme'}
+              </button>
+            )}
+            {checkingEnrollment && (
+              <p className="text-sm text-muted" role="status">Verificando inscripción...</p>
+            )}
+            {enrollmentStatusError && (
+              <p className="text-sm text-amber-700" role="status">
+                No pudimos verificar si ya estás inscrito. Si ya tienes acceso, revisa tus cursos.
+              </p>
+            )}
             <button
               aria-label={favorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
               aria-pressed={favorite}
@@ -350,6 +418,47 @@ export default function CourseDetail() {
           {enrollmentError && <p className="mt-3 text-sm text-red-700" role="alert">{enrollmentError}</p>}
         </div>
       </section>
+
+      {showCourseComingSoon && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setShowCourseComingSoon(false)
+          }}
+        >
+          <section
+            aria-labelledby="course-coming-soon-title"
+            aria-modal="true"
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="text-lg font-semibold text-slate-900" id="course-coming-soon-title">
+                Próximamente
+              </h2>
+              <button
+                aria-label="Cerrar"
+                className="flex size-8 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                onClick={() => setShowCourseComingSoon(false)}
+                type="button"
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            </div>
+            <p className="mt-3 text-sm text-slate-600">
+              Esta funcionalidad estará disponible próximamente.
+            </p>
+            <button
+              autoFocus
+              className="mt-6 min-h-10 w-full rounded-lg bg-primary px-4 text-sm font-semibold text-white transition hover:bg-primary-hover"
+              onClick={() => setShowCourseComingSoon(false)}
+              type="button"
+            >
+              Entendido
+            </button>
+          </section>
+        </div>
+      )}
 
       <section className="mt-6 border-b border-border">
         <nav aria-label="Secciones del curso" className="flex gap-7 overflow-x-auto" role="tablist">
