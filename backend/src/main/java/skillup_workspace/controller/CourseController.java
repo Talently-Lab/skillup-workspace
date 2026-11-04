@@ -19,6 +19,9 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +33,7 @@ import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.request.CourseStatusUpdateRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
 import skillup_workspace.dto.response.CourseResponseDTO;
+import skillup_workspace.observability.CourseCreationPerformanceLog;
 import skillup_workspace.service.CourseService;
 
 import java.io.IOException;
@@ -41,6 +45,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 @Tag(name = "Cursos", description = "Endpoints para la gestión y consulta de cursos")
 public class CourseController {
+
+    private static final Logger log = LoggerFactory.getLogger(CourseController.class);
 
     private final CourseService courseService;
     private final ObjectMapper objectMapper;
@@ -193,7 +199,26 @@ public class CourseController {
             @RequestPart(value = "image", required = false) MultipartFile image,
             @Parameter(description = "Programa PDF (opcional)")
             @RequestPart(value = "syllabus", required = false) MultipartFile syllabus) {
-        CourseRequestDTO requestDTO = parseCoursePart(coursePart);
+        MDC.put("imageBytes", Long.toString(image == null ? 0 : image.getSize()));
+        MDC.put("pdfBytes", Long.toString(syllabus == null ? 0 : syllabus.getSize()));
+        long validationStartedAt = System.nanoTime();
+        CourseRequestDTO requestDTO;
+        try {
+            requestDTO = parseCoursePart(coursePart);
+        } catch (RuntimeException exception) {
+            CourseCreationPerformanceLog.warning(log, "course_creation_stage")
+                    .addKeyValue("stage", "request_validation")
+                    .addKeyValue("durationMs", (System.nanoTime() - validationStartedAt) / 1_000_000)
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("errorType", exception.getClass().getSimpleName())
+                    .log("Course request validation failed");
+            throw exception;
+        }
+        CourseCreationPerformanceLog.event(log, "course_creation_stage")
+                .addKeyValue("stage", "request_validation")
+                .addKeyValue("durationMs", (System.nanoTime() - validationStartedAt) / 1_000_000)
+                .addKeyValue("result", "success")
+                .log("Course request validation completed");
         CourseDetailResponseDTO createdCourse = courseService.createCourse(requestDTO, image, syllabus);
         return ResponseEntity.status(HttpStatus.CREATED).body(createdCourse);
     }

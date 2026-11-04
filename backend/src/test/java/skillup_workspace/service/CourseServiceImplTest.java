@@ -13,6 +13,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,7 +29,11 @@ import skillup_workspace.repository.CourseFavoriteRepository;
 import skillup_workspace.repository.EnrollmentRepository;
 import skillup_workspace.repository.EnrollmentRepository.CourseEnrollmentCount;
 import skillup_workspace.service.impl.CourseServiceImpl;
+import skillup_workspace.service.impl.CoursePersistenceService;
+import skillup_workspace.service.impl.CourseAssetCleanupService;
+import skillup_workspace.service.impl.CourseUploadBulkhead;
 import skillup_workspace.storage.R2StorageService;
+import skillup_workspace.storage.R2StorageService.PreparedUpload;
 import skillup_workspace.storage.R2StorageService.StoredAsset;
 import skillup_workspace.storage.ImageConversionService;
 import skillup_workspace.storage.UploadPurpose;
@@ -38,6 +43,7 @@ import skillup_workspace.exception.R2StorageException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,7 +71,15 @@ class CourseServiceImplTest {
     @Mock
     private ImageConversionService imageConversionService;
 
-    @InjectMocks
+    @Mock
+    private CoursePersistenceService coursePersistenceService;
+
+    private CourseAssetCleanupService assetCleanupService;
+
+    @Mock
+    private CourseUploadBulkhead courseUploadBulkhead;
+
+    private ThreadPoolTaskExecutor courseUploadExecutor;
     private CourseServiceImpl courseService;
 
     private Course mockCourse;
@@ -85,11 +99,30 @@ class CourseServiceImplTest {
         requestDTO = new CourseRequestDTO();
         detailResponseDTO = new CourseDetailResponseDTO();
         responseDTO = new CourseResponseDTO();
+        courseUploadExecutor = new ThreadPoolTaskExecutor();
+        courseUploadExecutor.setCorePoolSize(2);
+        courseUploadExecutor.setMaxPoolSize(2);
+        courseUploadExecutor.setQueueCapacity(8);
+        courseUploadExecutor.initialize();
+        assetCleanupService = new CourseAssetCleanupService(r2StorageService, courseRepository);
+        courseService = new CourseServiceImpl(
+                courseRepository,
+                courseFavoriteRepository,
+                enrollmentRepository,
+                courseMapper,
+                r2StorageService,
+                imageConversionService,
+                coursePersistenceService,
+                assetCleanupService,
+                courseUploadBulkhead,
+                courseUploadExecutor
+        );
     }
 
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+        courseUploadExecutor.destroy();
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.clearSynchronization();
         }
@@ -394,8 +427,11 @@ class CourseServiceImplTest {
     void createCourse_ShouldSaveAndReturnCourse() {
 
         given(courseMapper.toEntity(requestDTO)).willReturn(mockCourse);
-        given(courseRepository.save(mockCourse)).willReturn(mockCourse);
-        given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+        given(coursePersistenceService.persistCreatedCourse(
+                any(Course.class),
+                any(),
+                any(AtomicBoolean.class)
+        )).willReturn(detailResponseDTO);
 
 
         CourseDetailResponseDTO result = courseService.createCourse(requestDTO);
@@ -406,7 +442,11 @@ class CourseServiceImplTest {
         assertNull(mockCourse.getImageUrl());
         assertNull(mockCourse.getSyllabusUrl());
         verify(courseMapper, times(1)).toEntity(requestDTO);
-        verify(courseRepository, times(1)).save(mockCourse);
+        verify(coursePersistenceService).persistCreatedCourse(
+                eq(mockCourse),
+                any(),
+                any(AtomicBoolean.class)
+        );
     }
 
     @Test
@@ -414,15 +454,22 @@ class CourseServiceImplTest {
     void createCourse_AsDraft_ShouldSaveInactiveCourse() {
         requestDTO.setStatus(CourseStatus.BORRADOR);
         given(courseMapper.toEntity(requestDTO)).willReturn(mockCourse);
-        given(courseRepository.save(mockCourse)).willReturn(mockCourse);
-        given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+        given(coursePersistenceService.persistCreatedCourse(
+                any(Course.class),
+                any(),
+                any(AtomicBoolean.class)
+        )).willReturn(detailResponseDTO);
 
         CourseDetailResponseDTO result = courseService.createCourse(requestDTO);
 
         assertNotNull(result);
         assertEquals(CourseStatus.BORRADOR, mockCourse.getStatus());
         assertFalse(mockCourse.getIsActive());
-        verify(courseRepository).save(mockCourse);
+        verify(coursePersistenceService).persistCreatedCourse(
+                eq(mockCourse),
+                any(),
+                any(AtomicBoolean.class)
+        );
     }
 
     @Test
@@ -438,15 +485,27 @@ class CourseServiceImplTest {
         );
         MultipartFile image = new MockMultipartFile("image", "image.png", "image/png", new byte[]{1});
         MultipartFile syllabus = new MockMultipartFile("syllabus", "course.pdf", "application/pdf", new byte[]{2});
+        PreparedUpload preparedSyllabus = new PreparedUpload(
+                "courses/syllabi/12345678-1234-1234-1234-123456789012.pdf",
+                "application/pdf",
+                syllabus,
+                syllabus.getSize(),
+                UploadPurpose.COURSE_SYLLABUS
+        );
         ImageConversionService.ConvertedImage convertedImage = new ImageConversionService.ConvertedImage(
                 new byte[]{3, 4}
         );
         given(courseMapper.toEntity(requestDTO)).willReturn(mockCourse);
         given(imageConversionService.convertToWebp(image)).willReturn(convertedImage);
         given(r2StorageService.uploadWebp(convertedImage.content())).willReturn(imageAsset);
-        given(r2StorageService.upload(syllabus, UploadPurpose.COURSE_SYLLABUS)).willReturn(syllabusAsset);
-        given(courseRepository.save(mockCourse)).willReturn(mockCourse);
-        given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+        given(r2StorageService.prepareUpload(syllabus, UploadPurpose.COURSE_SYLLABUS))
+                .willReturn(preparedSyllabus);
+        given(r2StorageService.upload(preparedSyllabus)).willReturn(syllabusAsset);
+        given(coursePersistenceService.persistCreatedCourse(
+                any(Course.class),
+                any(),
+                any(AtomicBoolean.class)
+        )).willReturn(detailResponseDTO);
         TransactionSynchronizationManager.initSynchronization();
 
         CourseDetailResponseDTO result = courseService.createCourse(requestDTO, image, syllabus);
@@ -455,7 +514,8 @@ class CourseServiceImplTest {
         assertEquals(imageAsset.publicUrl(), mockCourse.getImageUrl());
         assertEquals(syllabusAsset.publicUrl(), mockCourse.getSyllabusUrl());
         verify(r2StorageService).uploadWebp(convertedImage.content());
-        verify(r2StorageService).upload(syllabus, UploadPurpose.COURSE_SYLLABUS);
+        verify(r2StorageService).prepareUpload(syllabus, UploadPurpose.COURSE_SYLLABUS);
+        verify(r2StorageService).upload(preparedSyllabus);
     }
 
     @Test
@@ -472,7 +532,11 @@ class CourseServiceImplTest {
         given(courseMapper.toEntity(requestDTO)).willReturn(mockCourse);
         given(imageConversionService.convertToWebp(image)).willReturn(convertedImage);
         given(r2StorageService.uploadWebp(convertedImage.content())).willReturn(imageAsset);
-        given(courseRepository.save(mockCourse)).willThrow(new IllegalStateException("database failure"));
+        given(coursePersistenceService.persistCreatedCourse(
+                any(Course.class),
+                any(),
+                any(AtomicBoolean.class)
+        )).willThrow(new IllegalStateException("database failure"));
 
         assertThrows(
                 IllegalStateException.class,

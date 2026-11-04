@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.multipart.MultipartFile;
 import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
@@ -16,7 +17,9 @@ import skillup_workspace.dto.response.CourseResponseDTO;
 import skillup_workspace.entity.Course;
 import skillup_workspace.entity.CourseStatus;
 import skillup_workspace.exception.ResourceNotFoundException;
+import skillup_workspace.exception.R2StorageException;
 import skillup_workspace.mapper.CourseMapper;
+import skillup_workspace.observability.CourseCreationPerformanceLog;
 import skillup_workspace.repository.CourseRepository;
 import skillup_workspace.repository.CourseFavoriteRepository;
 import skillup_workspace.repository.EnrollmentRepository;
@@ -24,10 +27,16 @@ import skillup_workspace.service.CourseService;
 import skillup_workspace.storage.R2StorageService;
 import skillup_workspace.storage.R2StorageService.StoredAsset;
 import skillup_workspace.storage.ImageConversionService;
+import skillup_workspace.storage.R2StorageService.PreparedUpload;
 import skillup_workspace.storage.UploadPurpose;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +54,10 @@ public class CourseServiceImpl implements CourseService {
     private final CourseMapper courseMapper;
     private final R2StorageService r2StorageService;
     private final ImageConversionService imageConversionService;
+    private final CoursePersistenceService coursePersistenceService;
+    private final CourseAssetCleanupService assetCleanupService;
+    private final CourseUploadBulkhead courseUploadBulkhead;
+    private final ThreadPoolTaskExecutor courseUploadExecutor;
 
     @Override
     @Transactional(readOnly = true)
@@ -76,20 +89,42 @@ public class CourseServiceImpl implements CourseService {
     }
 
     @Override
-    @Transactional
     public CourseDetailResponseDTO createCourse(CourseRequestDTO requestDTO) {
         return createCourse(requestDTO, null, null);
     }
 
     @Override
-    @Transactional
     public CourseDetailResponseDTO createCourse(
             CourseRequestDTO requestDTO,
             MultipartFile image,
             MultipartFile syllabus
     ) {
+        long processStartedAt = System.nanoTime();
         List<StoredAsset> uploadedAssets = new ArrayList<>();
+        AtomicBoolean rollbackCleanupRegistered = new AtomicBoolean();
+        String result = "failure";
+        boolean uploadPermitAcquired = false;
         try {
+            if (image != null || syllabus != null) {
+                long waitStartedAt = System.nanoTime();
+                try {
+                    courseUploadBulkhead.acquire();
+                } catch (RuntimeException exception) {
+                    CourseCreationPerformanceLog.warning(log, "course_creation_stage")
+                            .addKeyValue("stage", "upload_capacity_wait")
+                            .addKeyValue("durationMs", (System.nanoTime() - waitStartedAt) / 1_000_000)
+                            .addKeyValue("result", "failure")
+                            .addKeyValue("errorType", exception.getClass().getSimpleName())
+                            .log("Course upload capacity wait failed");
+                    throw exception;
+                }
+                uploadPermitAcquired = true;
+                CourseCreationPerformanceLog.event(log, "course_creation_stage")
+                        .addKeyValue("stage", "upload_capacity_wait")
+                        .addKeyValue("durationMs", (System.nanoTime() - waitStartedAt) / 1_000_000)
+                        .addKeyValue("result", "success")
+                        .log("Course upload capacity acquired");
+            }
             Course course = courseMapper.toEntity(requestDTO);
             CourseStatus initialStatus = requestDTO.getStatus() != null
                     ? requestDTO.getStatus()
@@ -99,25 +134,187 @@ public class CourseServiceImpl implements CourseService {
             course.setImageUrl(null);
             course.setSyllabusUrl(null);
 
+            byte[] webpImage = null;
+            PreparedUpload preparedSyllabus = null;
             if (image != null) {
-                byte[] webpImage = imageConversionService.convertToWebp(image).content();
-                StoredAsset asset = r2StorageService.uploadWebp(webpImage);
-                uploadedAssets.add(asset);
-                course.setImageUrl(asset.publicUrl());
-            }
-            if (syllabus != null) {
-                StoredAsset asset = r2StorageService.upload(syllabus, UploadPurpose.COURSE_SYLLABUS);
-                uploadedAssets.add(asset);
-                course.setSyllabusUrl(asset.publicUrl());
+                long conversionStartedAt = System.nanoTime();
+                try {
+                    webpImage = imageConversionService.convertToWebp(image).content();
+                    CourseCreationPerformanceLog.event(log, "course_creation_stage")
+                            .addKeyValue("stage", "image_conversion")
+                            .addKeyValue("durationMs", (System.nanoTime() - conversionStartedAt) / 1_000_000)
+                            .addKeyValue("result", "success")
+                            .log("Course image conversion completed");
+                } catch (RuntimeException exception) {
+                    CourseCreationPerformanceLog.warning(log, "course_creation_stage")
+                            .addKeyValue("stage", "image_conversion")
+                            .addKeyValue("durationMs", (System.nanoTime() - conversionStartedAt) / 1_000_000)
+                            .addKeyValue("result", "failure")
+                            .addKeyValue("errorType", exception.getClass().getSimpleName())
+                            .log("Course image conversion failed");
+                    throw exception;
+                }
             }
 
-            Course savedCourse = courseRepository.save(course);
-            CourseDetailResponseDTO response = courseMapper.toDetailResponseDTO(savedCourse);
-            registerAssetCleanup(uploadedAssets, List.of());
+            long fileValidationStartedAt = System.nanoTime();
+            try {
+                if (webpImage != null) {
+                    r2StorageService.validateWebp(webpImage);
+                }
+                if (syllabus != null) {
+                    preparedSyllabus = r2StorageService.prepareUpload(syllabus, UploadPurpose.COURSE_SYLLABUS);
+                }
+            } catch (RuntimeException exception) {
+                CourseCreationPerformanceLog.warning(log, "course_creation_stage")
+                        .addKeyValue("stage", "file_validation")
+                        .addKeyValue("durationMs", (System.nanoTime() - fileValidationStartedAt) / 1_000_000)
+                        .addKeyValue("result", "failure")
+                        .addKeyValue("errorType", exception.getClass().getSimpleName())
+                        .log("Course upload input validation failed");
+                throw exception;
+            }
+
+            CourseCreationPerformanceLog.event(log, "course_creation_stage")
+                    .addKeyValue("stage", "file_validation")
+                    .addKeyValue("durationMs", (System.nanoTime() - fileValidationStartedAt) / 1_000_000)
+                    .addKeyValue("result", "success")
+                    .log("Course upload inputs validated");
+
+            List<UploadTask> uploadTasks = new ArrayList<>();
+            if (webpImage != null) {
+                byte[] imageContent = webpImage;
+                uploadTasks.add(new UploadTask(
+                        "image",
+                        imageContent.length,
+                        () -> r2StorageService.uploadWebp(imageContent)
+                ));
+            }
+            if (preparedSyllabus != null) {
+                PreparedUpload syllabusContent = preparedSyllabus;
+                uploadTasks.add(new UploadTask(
+                        "pdf",
+                        syllabusContent.fileSize(),
+                        () -> r2StorageService.upload(syllabusContent)
+                ));
+            }
+
+            uploadAssets(uploadTasks, uploadedAssets);
+            for (StoredAsset asset : uploadedAssets) {
+                if (asset.objectKey().startsWith("courses/images/")) {
+                    course.setImageUrl(asset.publicUrl());
+                } else if (asset.objectKey().startsWith("courses/syllabi/")) {
+                    course.setSyllabusUrl(asset.publicUrl());
+                }
+            }
+
+            CourseDetailResponseDTO response = coursePersistenceService.persistCreatedCourse(
+                    course,
+                    uploadedAssets,
+                    rollbackCleanupRegistered
+            );
+            result = "success";
             return response;
         } catch (RuntimeException exception) {
-            cleanupUploadedAssets(uploadedAssets, exception);
+            if (!rollbackCleanupRegistered.get()) {
+                assetCleanupService.cleanupUploadedAssets(uploadedAssets, exception);
+            }
             throw exception;
+        } finally {
+            if (uploadPermitAcquired) {
+                courseUploadBulkhead.release();
+            }
+            CourseCreationPerformanceLog.event(log, "course_creation_stage")
+                    .addKeyValue("stage", "service_process")
+                    .addKeyValue("durationMs", (System.nanoTime() - processStartedAt) / 1_000_000)
+                    .addKeyValue("result", result)
+                    .log("Course creation service process completed");
+        }
+    }
+
+    private void uploadAssets(List<UploadTask> uploadTasks, List<StoredAsset> uploadedAssets) {
+        List<CompletableFuture<StoredAsset>> uploads = new ArrayList<>();
+        RuntimeException failure = null;
+        for (UploadTask uploadTask : uploadTasks) {
+            try {
+                UploadTask submittedTask = new UploadTask(
+                        uploadTask.name(),
+                        uploadTask.fileBytes(),
+                        uploadTask.upload(),
+                        System.nanoTime()
+                );
+                uploads.add(CompletableFuture.supplyAsync(
+                        () -> uploadAsset(submittedTask),
+                        courseUploadExecutor
+                ));
+            } catch (RejectedExecutionException exception) {
+                CourseCreationPerformanceLog.warning(log, "course_creation_storage")
+                        .addKeyValue("operation", uploadTask.name())
+                        .addKeyValue("durationMs", 0)
+                        .addKeyValue("fileBytes", uploadTask.fileBytes())
+                        .addKeyValue("result", "rejected")
+                        .addKeyValue("errorType", exception.getClass().getSimpleName())
+                        .log("Course upload task was rejected by the bounded executor");
+                failure = new R2StorageException(
+                        "El servicio de carga de archivos está ocupado. Intenta nuevamente.",
+                        exception
+                );
+                break;
+            }
+        }
+
+        for (CompletableFuture<StoredAsset> upload : uploads) {
+            try {
+                uploadedAssets.add(upload.join());
+            } catch (CompletionException exception) {
+                Throwable cause = exception.getCause();
+                if (failure == null) {
+                    failure = cause instanceof RuntimeException runtimeException
+                            ? runtimeException
+                            : new R2StorageException("No se pudo completar la carga de archivos.", cause);
+                } else if (cause != null) {
+                    failure.addSuppressed(cause);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    private StoredAsset uploadAsset(UploadTask uploadTask) {
+        long startedAt = System.nanoTime();
+        long queueWaitMs = (startedAt - uploadTask.submittedAtNanos()) / 1_000_000;
+        try {
+            StoredAsset asset = uploadTask.upload().get();
+            CourseCreationPerformanceLog.event(log, "course_creation_storage")
+                    .addKeyValue("operation", uploadTask.name())
+                    .addKeyValue("queueWaitMs", queueWaitMs)
+                    .addKeyValue("durationMs", (System.nanoTime() - startedAt) / 1_000_000)
+                    .addKeyValue("fileBytes", uploadTask.fileBytes())
+                    .addKeyValue("result", "success")
+                    .log("Course asset uploaded to R2");
+            return asset;
+        } catch (RuntimeException exception) {
+            CourseCreationPerformanceLog.warning(log, "course_creation_storage")
+                    .addKeyValue("operation", uploadTask.name())
+                    .addKeyValue("queueWaitMs", queueWaitMs)
+                    .addKeyValue("durationMs", (System.nanoTime() - startedAt) / 1_000_000)
+                    .addKeyValue("fileBytes", uploadTask.fileBytes())
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("errorType", exception.getClass().getSimpleName())
+                    .log("Course asset upload to R2 failed");
+            throw exception;
+        }
+    }
+
+    private record UploadTask(
+            String name,
+            long fileBytes,
+            Supplier<StoredAsset> upload,
+            long submittedAtNanos
+    ) {
+        private UploadTask(String name, long fileBytes, Supplier<StoredAsset> upload) {
+            this(name, fileBytes, upload, System.nanoTime());
         }
     }
 
@@ -185,7 +382,7 @@ public class CourseServiceImpl implements CourseService {
             registerAssetCleanup(uploadedAssets, replacedUrls);
             return response;
         } catch (RuntimeException exception) {
-            cleanupUploadedAssets(uploadedAssets, exception);
+            assetCleanupService.cleanupUploadedAssets(uploadedAssets, exception);
             throw exception;
         }
     }
@@ -229,36 +426,11 @@ public class CourseServiceImpl implements CourseService {
             @Override
             public void afterCompletion(int status) {
                 if (status == STATUS_COMMITTED) {
-                    deleteReplacedAssetsWhenUnused(replacedUrls);
+                    assetCleanupService.deleteReplacedAssetsWhenUnused(replacedUrls);
                 } else {
-                    cleanupUploadedAssets(uploadedAssets, null);
+                    assetCleanupService.cleanupUploadedAssets(uploadedAssets, null);
                 }
             }
         });
-    }
-
-    private void deleteReplacedAssetsWhenUnused(List<String> replacedUrls) {
-        for (String url : replacedUrls) {
-            try {
-                if (!courseRepository.existsByImageUrl(url) && !courseRepository.existsBySyllabusUrl(url)) {
-                    r2StorageService.deleteManagedAsset(url);
-                }
-            } catch (RuntimeException exception) {
-                log.warn("No se pudo limpiar el archivo antiguo del curso después de actualizarlo.", exception);
-            }
-        }
-    }
-
-    private void cleanupUploadedAssets(List<StoredAsset> uploadedAssets, RuntimeException cause) {
-        for (StoredAsset asset : uploadedAssets) {
-            try {
-                r2StorageService.deleteAsset(asset);
-            } catch (RuntimeException cleanupException) {
-                log.warn("No se pudo limpiar un archivo R2 que no quedó asociado a un curso.", cleanupException);
-                if (cause != null) {
-                    cause.addSuppressed(cleanupException);
-                }
-            }
-        }
     }
 }

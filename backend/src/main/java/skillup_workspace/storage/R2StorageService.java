@@ -1,6 +1,8 @@
 package skillup_workspace.storage;
 
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -11,8 +13,10 @@ import skillup_workspace.dto.response.CompletedUploadResponse;
 import skillup_workspace.dto.response.PresignedUploadResponse;
 import skillup_workspace.exception.InvalidUploadException;
 import skillup_workspace.exception.R2StorageException;
+import skillup_workspace.observability.CourseCreationPerformanceLog;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.exception.SdkException;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -23,10 +27,12 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+import software.amazon.awssdk.http.ContentStreamProvider;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.net.URI;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Locale;
@@ -36,6 +42,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class R2StorageService {
+
+    private static final Logger log = LoggerFactory.getLogger(R2StorageService.class);
 
     private static final String IMAGE_PREFIX = "courses/images/";
     private static final String SYLLABUS_PREFIX = "courses/syllabi/";
@@ -82,7 +90,14 @@ public class R2StorageService {
     }
 
     public StoredAsset upload(MultipartFile file, UploadPurpose purpose) {
+        return upload(prepareUpload(file, purpose));
+    }
+
+    public PreparedUpload prepareUpload(MultipartFile file, UploadPurpose purpose) {
         ensureStorageReady();
+        if (purpose == null) {
+            throw new InvalidUploadException("El propósito del archivo no es válido.");
+        }
         if (file == null) {
             throw new InvalidUploadException("El archivo es obligatorio.");
         }
@@ -91,38 +106,45 @@ public class R2StorageService {
                 file.getOriginalFilename(), file.getContentType(), file.getSize(), purpose
         );
         String objectKey = prefixFor(purpose) + UUID.randomUUID() + "." + extension;
-        String contentType = normalizeContentType(file.getContentType());
-
         try {
-            byte[] content = file.getBytes();
-            if (!hasValidSignature(purpose, objectKey, content)) {
+            if (!hasValidSignature(file, purpose, objectKey)) {
                 throw new InvalidUploadException(
                         "El contenido del archivo no coincide con el tipo seleccionado."
                 );
             }
-
-            s3ClientProvider.getObject().putObject(
-                    PutObjectRequest.builder()
-                            .bucket(properties.getBucketName())
-                            .key(objectKey)
-                            .contentType(contentType)
-                            .build(),
-                    software.amazon.awssdk.core.sync.RequestBody.fromBytes(content)
+            return new PreparedUpload(
+                    objectKey,
+                    normalizeContentType(file.getContentType()),
+                    file,
+                    file.getSize(),
+                    purpose
             );
-            return new StoredAsset(objectKey, buildPublicUrl(objectKey));
         } catch (IOException exception) {
             throw new R2StorageException("No se pudo leer el archivo seleccionado.", exception);
-        } catch (SdkException exception) {
-            try {
-                deleteObject(objectKey);
-            } catch (RuntimeException cleanupException) {
-                exception.addSuppressed(cleanupException);
-            }
-            throw new R2StorageException("No se pudo subir el archivo a R2.", exception);
         }
     }
 
-    public StoredAsset uploadWebp(byte[] content) {
+    public StoredAsset upload(PreparedUpload upload) {
+        ensureStorageReady();
+        if (upload == null) {
+            throw new IllegalArgumentException("La carga preparada es obligatoria.");
+        }
+        ContentStreamProvider contentStreamProvider = () -> {
+            try {
+                return upload.file().getInputStream();
+            } catch (IOException exception) {
+                throw new R2StorageException("No se pudo leer el archivo seleccionado.", exception);
+            }
+        };
+        return putObject(
+                upload.objectKey(),
+                upload.contentType(),
+                RequestBody.fromContentProvider(contentStreamProvider, upload.fileSize(), upload.contentType()),
+                upload.purpose()
+        );
+    }
+
+    public void validateWebp(byte[] content) {
         ensureStorageReady();
         if (content == null || content.length == 0) {
             throw new InvalidUploadException("La imagen convertida no puede estar vacía.");
@@ -130,29 +152,57 @@ public class R2StorageService {
         if (content.length > properties.getMaxImageSizeBytes()) {
             throw new InvalidUploadException("La imagen convertida supera el límite de 5 MB.");
         }
-
-        String objectKey = IMAGE_PREFIX + UUID.randomUUID() + ".webp";
-        if (!hasValidSignature(UploadPurpose.COURSE_IMAGE, objectKey, content)) {
+        if (!hasValidSignature(UploadPurpose.COURSE_IMAGE, IMAGE_PREFIX + "validation.webp", content)) {
             throw new InvalidUploadException("El archivo convertido no tiene un formato WebP válido.");
         }
+    }
 
+    public StoredAsset uploadWebp(byte[] content) {
+        validateWebp(content);
+        return putObject(
+                IMAGE_PREFIX + UUID.randomUUID() + ".webp",
+                WEBP,
+                RequestBody.fromBytes(content),
+                UploadPurpose.COURSE_IMAGE
+        );
+    }
+
+    private StoredAsset putObject(
+            String objectKey,
+            String contentType,
+            RequestBody requestBody,
+            UploadPurpose purpose
+    ) {
         try {
             s3ClientProvider.getObject().putObject(
                     PutObjectRequest.builder()
                             .bucket(properties.getBucketName())
                             .key(objectKey)
-                            .contentType(WEBP)
+                            .contentType(contentType)
                             .build(),
-                    software.amazon.awssdk.core.sync.RequestBody.fromBytes(content)
+                    requestBody
             );
             return new StoredAsset(objectKey, buildPublicUrl(objectKey));
-        } catch (SdkException exception) {
+        } catch (SdkException | R2StorageException exception) {
             try {
                 deleteObject(objectKey);
             } catch (RuntimeException cleanupException) {
                 exception.addSuppressed(cleanupException);
+                CourseCreationPerformanceLog.warning(log, "course_creation_storage")
+                        .addKeyValue("operation", "partial_upload_cleanup")
+                        .addKeyValue("result", "failure")
+                        .addKeyValue("errorType", cleanupException.getClass().getSimpleName())
+                        .log("Could not clean up a partially uploaded object");
             }
-            throw new R2StorageException("No se pudo subir la imagen WebP a R2.", exception);
+            if (exception instanceof R2StorageException storageException) {
+                throw storageException;
+            }
+            throw new R2StorageException(
+                    purpose == UploadPurpose.COURSE_IMAGE
+                            ? "No se pudo subir la imagen WebP a R2."
+                            : "No se pudo subir el archivo a R2.",
+                    exception
+            );
         }
     }
 
@@ -278,11 +328,23 @@ public class R2StorageService {
             throw new InvalidUploadException("La referencia del archivo no es válida.");
         }
 
+        long startedAt = System.nanoTime();
         try {
             s3ClientProvider.getObject().deleteObject(builder -> builder
                     .bucket(properties.getBucketName())
                     .key(objectKey));
+            CourseCreationPerformanceLog.event(log, "course_creation_storage")
+                    .addKeyValue("operation", "delete")
+                    .addKeyValue("durationMs", (System.nanoTime() - startedAt) / 1_000_000)
+                    .addKeyValue("result", "success")
+                    .log("Course asset deletion completed");
         } catch (SdkException exception) {
+            CourseCreationPerformanceLog.warning(log, "course_creation_storage")
+                    .addKeyValue("operation", "delete")
+                    .addKeyValue("durationMs", (System.nanoTime() - startedAt) / 1_000_000)
+                    .addKeyValue("result", "failure")
+                    .addKeyValue("errorType", exception.getClass().getSimpleName())
+                    .log("Course asset deletion failed");
             throw new R2StorageException("No se pudo eliminar el archivo de R2.", exception);
         }
     }
@@ -330,6 +392,32 @@ public class R2StorageService {
                     && asciiAt(bytes, 0, "RIFF") && asciiAt(bytes, 8, "WEBP");
             default -> false;
         };
+    }
+
+    private boolean hasValidSignature(MultipartFile file, UploadPurpose purpose, String objectKey) throws IOException {
+        try (InputStream input = file.getInputStream()) {
+            if (purpose == UploadPurpose.COURSE_SYLLABUS) {
+                return containsAscii(input, "%PDF-");
+            }
+            return hasValidSignature(purpose, objectKey, input.readNBytes(12));
+        }
+    }
+
+    private boolean containsAscii(InputStream input, String signature) throws IOException {
+        byte[] expected = signature.getBytes(StandardCharsets.US_ASCII);
+        int matched = 0;
+        int nextByte;
+        while ((nextByte = input.read()) != -1) {
+            if ((byte) nextByte == expected[matched]) {
+                matched++;
+                if (matched == expected.length) {
+                    return true;
+                }
+            } else {
+                matched = (byte) nextByte == expected[0] ? 1 : 0;
+            }
+        }
+        return false;
     }
 
     private boolean startsWith(byte[] bytes, byte[] prefix) {
@@ -430,5 +518,14 @@ public class R2StorageService {
     }
 
     public record StoredAsset(String objectKey, String publicUrl) {
+    }
+
+    public record PreparedUpload(
+            String objectKey,
+            String contentType,
+            MultipartFile file,
+            long fileSize,
+            UploadPurpose purpose
+    ) {
     }
 }
