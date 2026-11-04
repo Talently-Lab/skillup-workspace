@@ -185,6 +185,42 @@ class SecurityAuthorizationHttpTest {
     }
 
     @Test
+    void getCourseEnrollmentsWithoutTokenReturns401() throws Exception {
+        HttpResponse<String> response = courseEnrollmentsRequest(2L, null);
+
+        assertEquals(401, response.statusCode());
+        verifyNoInteractions(enrollmentService);
+    }
+
+    @Test
+    void getCourseEnrollmentsWithStudentTokenReturns403() throws Exception {
+        User student = user("student@example.com", "ALUMNO");
+        given(jwtService.extractUsername("student-token")).willReturn(student.getEmail());
+        given(userRepository.findByEmail(student.getEmail())).willReturn(Optional.of(student));
+        given(jwtService.isTokenValid("student-token", student)).willReturn(true);
+
+        HttpResponse<String> response = courseEnrollmentsRequest(2L, "student-token");
+
+        assertEquals(403, response.statusCode());
+        verifyNoInteractions(enrollmentService);
+    }
+
+    @Test
+    void getCourseEnrollmentsWithAdminTokenReturnsEnrollments() throws Exception {
+        User admin = user("admin@example.com", "ADMIN");
+        given(jwtService.extractUsername("admin-token")).willReturn(admin.getEmail());
+        given(userRepository.findByEmail(admin.getEmail())).willReturn(Optional.of(admin));
+        given(jwtService.isTokenValid("admin-token", admin)).willReturn(true);
+        given(enrollmentService.getCourseEnrollments(2L)).willReturn(List.of());
+
+        HttpResponse<String> response = courseEnrollmentsRequest(2L, "admin-token");
+
+        assertEquals(200, response.statusCode());
+        assertEquals("[]", response.body());
+        verify(enrollmentService).getCourseEnrollments(2L);
+    }
+
+    @Test
     void deleteWithoutTokenReturns401JsonOverHttp() throws Exception {
         HttpResponse<String> response = deleteCourse(null);
 
@@ -303,6 +339,16 @@ class SecurityAuthorizationHttpTest {
     private HttpResponse<String> enrollmentsRequest(String token) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + "/api/v1/enrollments"))
+                .GET();
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return HTTP_CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> courseEnrollmentsRequest(Long courseId, String token) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/enrollments/courses/" + courseId))
                 .GET();
         if (token != null) {
             request.header("Authorization", "Bearer " + token);

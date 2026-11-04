@@ -10,6 +10,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import skillup_workspace.dto.request.EnrollmentRequestDTO;
+import skillup_workspace.dto.response.CourseStudentEnrollmentResponseDTO;
+import skillup_workspace.dto.response.CourseStudentEnrollmentResponseDTO;
 import skillup_workspace.dto.response.EnrollmentResponseDTO;
 import skillup_workspace.dto.response.StudentEnrollmentResponseDTO;
 import skillup_workspace.entity.Course;
@@ -60,7 +62,7 @@ class EnrollmentServiceImplTest {
         SecurityContext securityContext = mock(SecurityContext.class);
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(mockUser, null, null);
-        when(securityContext.getAuthentication()).thenReturn(authentication);
+        lenient().when(securityContext.getAuthentication()).thenReturn(authentication);
         SecurityContextHolder.setContext(securityContext);
     }
 
@@ -122,4 +124,36 @@ class EnrollmentServiceImplTest {
         assertEquals("Curso de Prueba", result.get(0).getCourseTitle());
         assertEquals("ACTIVE", result.get(0).getStatus());
     }
+
+    @Test
+    void getCourseEnrollments_ReturnsStudentDetailsForCourse() {
+        Enrollment enrollment = new Enrollment();
+        enrollment.setId(100L);
+        enrollment.setUser(mockUser);
+        enrollment.setCourse(mockCourse);
+        enrollment.setStatus("ACTIVE");
+        when(courseRepository.existsById(1L)).thenReturn(true);
+        when(enrollmentRepository.findByCourseIdWithUserOrderByEnrolledAtDesc(1L))
+                .thenReturn(List.of(enrollment));
+
+        List<CourseStudentEnrollmentResponseDTO> result = enrollmentService.getCourseEnrollments(1L);
+
+        assertEquals(1, result.size());
+        assertEquals(100L, result.get(0).getEnrollmentId());
+        assertEquals(1L, result.get(0).getStudentId());
+        assertEquals("alumno@ejemplo.com", result.get(0).getEmail());
+        assertEquals("ACTIVE", result.get(0).getStatus());
+    }
+
+    @Test
+    void getCourseEnrollments_UnknownCourse_ThrowsNotFound() {
+        when(courseRepository.existsById(404L)).thenReturn(false);
+
+        assertThrows(
+                skillup_workspace.exception.ResourceNotFoundException.class,
+                () -> enrollmentService.getCourseEnrollments(404L)
+        );
+        verify(enrollmentRepository, never()).findByCourseIdWithUserOrderByEnrolledAtDesc(anyLong());
+    }
+
 }

@@ -115,6 +115,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/uploads/**").hasAuthority("ADMIN")
 
                         .requestMatchers(HttpMethod.GET, "/api/v1/enrollments").hasAuthority("ALUMNO")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/enrollments/courses/**").hasAuthority("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/enrollments").hasAuthority("ALUMNO")
 
                         .anyRequest().authenticated()

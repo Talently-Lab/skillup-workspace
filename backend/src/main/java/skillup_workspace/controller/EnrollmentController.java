@@ -12,11 +12,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import skillup_workspace.dto.request.EnrollmentRequestDTO;
+import skillup_workspace.dto.response.CourseStudentEnrollmentResponseDTO;
 import skillup_workspace.dto.response.EnrollmentResponseDTO;
 import skillup_workspace.dto.response.StudentEnrollmentResponseDTO;
 import skillup_workspace.service.EnrollmentService;
@@ -40,6 +42,19 @@ public class EnrollmentController {
     @GetMapping
     public ResponseEntity<List<StudentEnrollmentResponseDTO>> getCurrentUserEnrollments() {
         return ResponseEntity.ok(enrollmentService.getCurrentUserEnrollments());
+    }
+
+    @Operation(
+            summary = "Consultar alumnos inscritos en un curso",
+            description = "Devuelve los alumnos inscritos en el curso indicado. Requiere rol ADMIN.",
+            security = @SecurityRequirement(name = "bearerAuth")
+    )
+    @ApiResponse(responseCode = "200", description = "Alumnos inscritos en el curso")
+    @GetMapping("/courses/{courseId}")
+    public ResponseEntity<List<CourseStudentEnrollmentResponseDTO>> getCourseEnrollments(
+            @PathVariable Long courseId
+    ) {
+        return ResponseEntity.ok(enrollmentService.getCourseEnrollments(courseId));
     }
 
     @Operation(

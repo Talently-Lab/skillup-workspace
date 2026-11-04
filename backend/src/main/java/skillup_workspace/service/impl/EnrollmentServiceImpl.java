@@ -6,6 +6,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import skillup_workspace.dto.request.EnrollmentRequestDTO;
+import skillup_workspace.dto.response.CourseStudentEnrollmentResponseDTO;
 import skillup_workspace.dto.response.EnrollmentResponseDTO;
 import skillup_workspace.dto.response.ScheduleResponseDTO;
 import skillup_workspace.dto.response.StudentEnrollmentResponseDTO;
@@ -81,6 +82,18 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .toList();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<CourseStudentEnrollmentResponseDTO> getCourseEnrollments(Long courseId) {
+        if (!courseRepository.existsById(courseId)) {
+            throw new ResourceNotFoundException("Curso no encontrado con el id: " + courseId);
+        }
+        return enrollmentRepository.findByCourseIdWithUserOrderByEnrolledAtDesc(courseId)
+                .stream()
+                .map(this::toCourseStudentEnrollmentResponse)
+                .toList();
+    }
+
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String email = auth.getPrincipal() instanceof User user
@@ -113,6 +126,19 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                     course.getSchedule().getRecordedContentMinutes()
             ));
         }
+        return response;
+    }
+
+    private CourseStudentEnrollmentResponseDTO toCourseStudentEnrollmentResponse(Enrollment enrollment) {
+        User student = enrollment.getUser();
+        CourseStudentEnrollmentResponseDTO response = new CourseStudentEnrollmentResponseDTO();
+        response.setEnrollmentId(enrollment.getId());
+        response.setStudentId(student.getId());
+        response.setFirstName(student.getFirstName());
+        response.setLastName(student.getLastName());
+        response.setEmail(student.getEmail());
+        response.setStatus(enrollment.getStatus());
+        response.setEnrolledAt(enrollment.getEnrolledAt());
         return response;
     }
 }
