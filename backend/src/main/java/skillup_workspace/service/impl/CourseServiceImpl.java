@@ -14,6 +14,7 @@ import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
 import skillup_workspace.dto.response.CourseResponseDTO;
 import skillup_workspace.entity.Course;
+import skillup_workspace.entity.CourseStatus;
 import skillup_workspace.exception.ResourceNotFoundException;
 import skillup_workspace.mapper.CourseMapper;
 import skillup_workspace.repository.CourseRepository;
@@ -77,6 +78,11 @@ public class CourseServiceImpl implements CourseService {
         List<StoredAsset> uploadedAssets = new ArrayList<>();
         try {
             Course course = courseMapper.toEntity(requestDTO);
+            CourseStatus initialStatus = requestDTO.getStatus() != null
+                    ? requestDTO.getStatus()
+                    : CourseStatus.PUBLICADO;
+            course.setStatus(initialStatus);
+            course.setIsActive(initialStatus == CourseStatus.PUBLICADO);
             course.setImageUrl(null);
             course.setSyllabusUrl(null);
 
@@ -106,6 +112,17 @@ public class CourseServiceImpl implements CourseService {
     @Transactional
     public CourseDetailResponseDTO updateCourse(Long id, CourseRequestDTO requestDTO) {
         return updateCourse(id, requestDTO, null, null);
+    }
+
+    @Override
+    @Transactional
+    public CourseDetailResponseDTO updateCourseStatus(Long id, CourseStatus status) {
+        Course course = courseRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Curso no encontrado con el id: " + id));
+
+        course.setStatus(status);
+        course.setIsActive(status == CourseStatus.PUBLICADO);
+        return courseMapper.toDetailResponseDTO(courseRepository.save(course));
     }
 
     @Override

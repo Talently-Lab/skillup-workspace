@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import skillup_workspace.entity.CourseStatus;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -31,4 +32,5 @@ public class CourseDetailResponseDTO {
     private List<String> objectives;
     private List<ContentModuleResponseDTO> contentModules;
     private Boolean isActive;
+    private CourseStatus status;
 }

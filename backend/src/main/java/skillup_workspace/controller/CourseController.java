@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.Part;
+import jakarta.validation.Valid;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
@@ -23,6 +24,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.*;
 import skillup_workspace.dto.request.CourseRequestDTO;
+import skillup_workspace.dto.request.CourseStatusUpdateRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
 import skillup_workspace.dto.response.CourseResponseDTO;
 import skillup_workspace.service.CourseService;
@@ -202,6 +204,30 @@ public class CourseController {
             @RequestPart(value = "syllabus", required = false) MultipartFile syllabus) {
         CourseRequestDTO requestDTO = parseCoursePart(coursePart);
         return ResponseEntity.ok(courseService.updateCourse(id, requestDTO, image, syllabus));
+    }
+
+    @Operation(
+            summary = "Actualizar estado de un curso",
+            description = "Actualiza el estado persistente del curso sin modificar sus demás datos.",
+            security = @SecurityRequirement(name = "bearerAuth")
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Estado actualizado exitosamente",
+                    content = @Content(schema = @Schema(implementation = CourseDetailResponseDTO.class))
+            ),
+            @ApiResponse(responseCode = "400", description = "Estado inválido o ausente", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Curso no encontrado", content = @Content),
+            @ApiResponse(responseCode = "401", description = "Autenticación requerida", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Se requiere rol ADMIN", content = @Content)
+    })
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<CourseDetailResponseDTO> updateCourseStatus(
+            @Parameter(description = "ID del curso", example = "1")
+            @PathVariable Long id,
+            @Valid @RequestBody CourseStatusUpdateRequestDTO request) {
+        return ResponseEntity.ok(courseService.updateCourseStatus(id, request.getStatus()));
     }
 
     private CourseRequestDTO parseCoursePart(Part coursePart) {

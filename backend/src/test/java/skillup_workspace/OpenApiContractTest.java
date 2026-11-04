@@ -8,10 +8,12 @@ import jakarta.servlet.http.Part;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import skillup_workspace.controller.AuthController;
 import skillup_workspace.controller.CourseController;
 import skillup_workspace.dto.request.CourseRequestDTO;
+import skillup_workspace.dto.request.CourseStatusUpdateRequestDTO;
 import skillup_workspace.dto.request.ScheduleRequestDTO;
 import skillup_workspace.dto.request.LoginRequest;
 import skillup_workspace.dto.request.RegisterRequest;
@@ -46,6 +48,8 @@ class OpenApiContractTest {
                 "modality"
         )));
         assertTrue(!courseSchema.getRequired().contains("durationWeeks"));
+        assertTrue(!courseSchema.getRequired().contains("status"));
+        assertTrue(!courseSchema.getRequired().contains("status"));
     }
 
     @Test
@@ -92,6 +96,23 @@ class OpenApiContractTest {
                 .collect(Collectors.toSet());
 
         assertTrue(responseCodes.containsAll(Set.of("204", "401", "403", "404", "409")));
+    }
+
+    @Test
+    void courseStatusUpdateDocumentsPatchPathAndStatusValues() throws NoSuchMethodException {
+        Method updateStatus = CourseController.class.getMethod(
+                "updateCourseStatus", Long.class, CourseStatusUpdateRequestDTO.class
+        );
+        Set<String> responseCodes = Arrays.stream(updateStatus.getAnnotation(ApiResponses.class).value())
+                .map(ApiResponse::responseCode)
+                .collect(Collectors.toSet());
+        Map<String, Schema> schemas = ModelConverters.getInstance().read(CourseStatusUpdateRequestDTO.class);
+        Schema<?> requestSchema = schemas.get("CourseStatusUpdateRequestDTO");
+
+        assertEquals("/{id}/status", updateStatus.getAnnotation(PatchMapping.class).value()[0]);
+        assertTrue(responseCodes.containsAll(Set.of("200", "400", "401", "403", "404")));
+        assertNotNull(requestSchema);
+        assertTrue(requestSchema.getRequired().contains("status"));
     }
 
     @Test

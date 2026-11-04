@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import skillup_workspace.entity.CourseStatus;
 
 import java.time.LocalDate;
 
@@ -22,4 +23,5 @@ public class CourseResponseDTO {
     private Integer durationHours;
     private LocalDate nextStartDate;
     private ScheduleResponseDTO schedule;
+    private CourseStatus status;
 }

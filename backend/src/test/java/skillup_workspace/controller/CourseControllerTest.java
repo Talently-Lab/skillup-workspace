@@ -23,6 +23,7 @@ import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.request.ModalityRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
 import skillup_workspace.dto.response.CourseResponseDTO;
+import skillup_workspace.entity.CourseStatus;
 import skillup_workspace.exception.GlobalExceptionHandler;
 import skillup_workspace.exception.ResourceNotFoundException;
 import skillup_workspace.service.CourseService;
@@ -143,6 +144,37 @@ class CourseControllerTest {
         mockMvc.perform(multipart("/api/v1/courses")
                         .part(coursePart(objectMapper.writeValueAsString(requestDTO))))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/courses - Debería aceptar la creación como borrador")
+    void createCourse_ShouldAcceptDraftStatus() throws Exception {
+        given(courseService.createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        )).willReturn(new CourseDetailResponseDTO());
+
+        performCreate("""
+                                {
+                                  "title": "Borrador",
+                                  "summary": "Resumen",
+                                  "description": "Descripción",
+                                  "category": "Diseño",
+                                  "level": "Intermedio",
+                                  "durationHours": 5,
+                                  "durationWeeks": 1,
+                                  "status": "BORRADOR",
+                                  "modality": { "type": "EN VIVO" }
+                                }
+                                """)
+                .andExpect(status().isCreated());
+
+        Mockito.verify(courseService).createCourse(
+                Mockito.argThat(request -> request.getStatus() == CourseStatus.BORRADOR),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
     }
 
     @Test
@@ -521,6 +553,44 @@ class CourseControllerTest {
                             return request;
                         }))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("PATCH /api/v1/courses/{id}/status - Debería actualizar el estado del curso")
+    void updateCourseStatus_ShouldReturnUpdatedCourse() throws Exception {
+        Long courseId = 1L;
+        CourseDetailResponseDTO response = new CourseDetailResponseDTO();
+        response.setStatus(CourseStatus.ARCHIVADO);
+        given(courseService.updateCourseStatus(courseId, CourseStatus.ARCHIVADO)).willReturn(response);
+
+        mockMvc.perform(patch("/api/v1/courses/{id}/status", courseId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"ARCHIVADO"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ARCHIVADO"));
+    }
+
+    @Test
+    @DisplayName("PATCH /api/v1/courses/{id}/status - Debería rechazar estados inválidos")
+    void updateCourseStatus_ShouldRejectInvalidStatus() throws Exception {
+        mockMvc.perform(patch("/api/v1/courses/{id}/status", 1L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"UNKNOWN"}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("PATCH /api/v1/courses/{id}/status - Debería rechazar estado ausente")
+    void updateCourseStatus_ShouldRejectMissingStatus() throws Exception {
+        mockMvc.perform(patch("/api/v1/courses/{id}/status", 1L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
     }
 
     @Test

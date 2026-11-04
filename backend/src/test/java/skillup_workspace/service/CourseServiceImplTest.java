@@ -20,6 +20,7 @@ import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
 import skillup_workspace.dto.response.CourseResponseDTO;
 import skillup_workspace.entity.Course;
+import skillup_workspace.entity.CourseStatus;
 import skillup_workspace.exception.ResourceNotFoundException;
 import skillup_workspace.mapper.CourseMapper;
 import skillup_workspace.repository.CourseRepository;
@@ -95,6 +96,66 @@ class CourseServiceImplTest {
                 List.of(new SimpleGrantedAuthority(role))
         );
         SecurityContextHolder.getContext().setAuthentication(auth);
+    }
+
+    @Nested
+    @DisplayName("Pruebas para updateCourseStatus")
+    class UpdateCourseStatusTests {
+
+        @Test
+        @DisplayName("Debería persistir estado y sincronizar isActive")
+        void shouldPersistStatusAndActiveFlag() {
+            given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
+            given(courseRepository.save(mockCourse)).willReturn(mockCourse);
+            given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+
+            CourseDetailResponseDTO result = courseService.updateCourseStatus(1L, CourseStatus.BORRADOR);
+
+            assertSame(detailResponseDTO, result);
+            assertEquals(CourseStatus.BORRADOR, mockCourse.getStatus());
+            assertFalse(mockCourse.getIsActive());
+            verify(courseRepository).save(mockCourse);
+        }
+
+        @Test
+        @DisplayName("Debería activar cursos publicados")
+        void whenPublishedShouldSetCourseActive() {
+            mockCourse.setIsActive(false);
+            given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
+            given(courseRepository.save(mockCourse)).willReturn(mockCourse);
+            given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+
+            courseService.updateCourseStatus(1L, CourseStatus.PUBLICADO);
+
+            assertEquals(CourseStatus.PUBLICADO, mockCourse.getStatus());
+            assertTrue(mockCourse.getIsActive());
+            verify(courseRepository).save(mockCourse);
+        }
+
+        @Test
+        @DisplayName("Debería dejar archivado el curso inactivo")
+        void whenArchivedShouldSetCourseInactive() {
+            given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
+            given(courseRepository.save(mockCourse)).willReturn(mockCourse);
+            given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+
+            courseService.updateCourseStatus(1L, CourseStatus.ARCHIVADO);
+
+            assertEquals(CourseStatus.ARCHIVADO, mockCourse.getStatus());
+            assertFalse(mockCourse.getIsActive());
+            verify(courseRepository).save(mockCourse);
+        }
+
+        @Test
+        @DisplayName("Debería retornar error si el curso no existe")
+        void whenCourseDoesNotExistShouldThrowNotFound() {
+            given(courseRepository.findById(1L)).willReturn(Optional.empty());
+
+            assertThrows(ResourceNotFoundException.class,
+                    () -> courseService.updateCourseStatus(1L, CourseStatus.PUBLICADO));
+
+            verify(courseRepository, never()).save(any(Course.class));
+        }
     }
 
 
@@ -286,10 +347,28 @@ class CourseServiceImplTest {
         CourseDetailResponseDTO result = courseService.createCourse(requestDTO);
 
         assertNotNull(result);
+        assertEquals(CourseStatus.PUBLICADO, mockCourse.getStatus());
+        assertTrue(mockCourse.getIsActive());
         assertNull(mockCourse.getImageUrl());
         assertNull(mockCourse.getSyllabusUrl());
         verify(courseMapper, times(1)).toEntity(requestDTO);
         verify(courseRepository, times(1)).save(mockCourse);
+    }
+
+    @Test
+    @DisplayName("createCourse - Debería crear borrador inactivo")
+    void createCourse_AsDraft_ShouldSaveInactiveCourse() {
+        requestDTO.setStatus(CourseStatus.BORRADOR);
+        given(courseMapper.toEntity(requestDTO)).willReturn(mockCourse);
+        given(courseRepository.save(mockCourse)).willReturn(mockCourse);
+        given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+
+        CourseDetailResponseDTO result = courseService.createCourse(requestDTO);
+
+        assertNotNull(result);
+        assertEquals(CourseStatus.BORRADOR, mockCourse.getStatus());
+        assertFalse(mockCourse.getIsActive());
+        verify(courseRepository).save(mockCourse);
     }
 
     @Test

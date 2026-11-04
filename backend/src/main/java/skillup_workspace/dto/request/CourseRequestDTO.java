@@ -12,6 +12,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import skillup_workspace.entity.CourseStatus;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -49,6 +50,13 @@ public class CourseRequestDTO {
 
     @Schema(description = "Duración estimada; opcional para cursos grabados")
     private Integer durationWeeks;
+
+    @Schema(
+            description = "Estado inicial del curso; si se omite, se crea publicado",
+            allowableValues = {"PUBLICADO", "BORRADOR", "ARCHIVADO"},
+            example = "BORRADOR"
+    )
+    private CourseStatus status;
 
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     @NotNull(message = "La modalidad es obligatoria")

@@ -24,6 +24,7 @@ import java.net.http.HttpResponse;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest(
@@ -302,6 +303,12 @@ class CourseHardDeleteIntegrationTest {
         assertEquals(201, response.statusCode());
         assertEquals(1, courseRepository.count());
         assertTrue(response.body().contains("\"title\":\"Curso de prueba\""));
+        Long createdCourseId = courseRepository.findAll().get(0).getId();
+        assertNotNull(jdbcTemplate.queryForObject(
+                "select created_at from courses where course_id = ?",
+                java.sql.Timestamp.class,
+                createdCourseId
+        ));
     }
 
     @Test
