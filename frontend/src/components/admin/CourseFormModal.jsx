@@ -100,6 +100,7 @@ const emptyCourse = {
   summary: '',
   description: '',
   imageUrl: '',
+  nextStartDate: '',
   durationHours: '',
   durationWeeks: '',
   recordedContentHours: '',
@@ -145,6 +146,7 @@ function getCourseFormValues(course) {
     summary: course.summary ?? '',
     description: course.description ?? '',
     imageUrl: course.imageUrl ?? '',
+    nextStartDate: course.nextStartDate ?? '',
     durationHours: course.durationHours ?? '',
     durationWeeks: course.durationWeeks ?? '',
     recordedContentHours: recordedContentMinutes
@@ -616,10 +618,8 @@ function CourseFormModal({ course, onClose, onSaved }) {
         description: values.description.trim(),
         durationHours: calculatedDurationHours,
         durationWeeks: values.durationWeeks === '' ? null : Number(values.durationWeeks),
+        nextStartDate: values.nextStartDate || null,
         ...(!isEditing ? { status: createAsDraft ? 'BORRADOR' : 'PUBLICADO' } : {}),
-        ...(isEditing && course?.nextStartDate
-          ? { nextStartDate: course.nextStartDate }
-          : {}),
         schedule:
           isRecordedModality ||
           isLiveModality ||
@@ -1083,6 +1083,21 @@ function CourseFormModal({ course, onClose, onSaved }) {
                   <p className="mt-2 text-xs text-red-600" role="alert">{modalityErrors.type}</p>
                 )}
               </div>
+
+              <label className={`${labelClassName} block max-w-sm`} htmlFor="nextStartDate">
+                Próxima fecha
+                <input
+                  className={`${inputClassName} rounded-xl px-3.5 py-2.5`}
+                  id="nextStartDate"
+                  name="nextStartDate"
+                  onChange={updateValue}
+                  type="date"
+                  value={values.nextStartDate}
+                />
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  Se mostrará en la tarjeta pública del curso.
+                </span>
+              </label>
 
               {!modalityChoices.type ? (
                 <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">

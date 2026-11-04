@@ -18,14 +18,9 @@ export function AdminSidebar({ activeSection, onNavigate }) {
   return (
     <aside className="relative z-20 w-full shrink-0 border-b border-border bg-white px-4 py-3 md:min-h-screen md:w-48 md:border-b-0 md:border-r md:px-3 md:py-6 lg:w-60 lg:px-5 lg:py-7">
       <div className="flex items-center justify-between md:mb-10">
-        <button
-          aria-label="SkillUp Campus, ir al resumen"
-          className="inline-flex"
-          onClick={() => onNavigate('summary')}
-          type="button"
-        >
-          <img alt="SkillUp Campus" className="h-9" src="/images/logo.svg" />
-        </button>
+        <p className="px-3 text-xs font-bold uppercase tracking-[0.14em] text-muted">
+          Administración
+        </p>
         <button
           aria-expanded={menuOpen}
           aria-label={menuOpen ? 'Cerrar menú de administración' : 'Abrir menú de administración'}
@@ -36,9 +31,6 @@ export function AdminSidebar({ activeSection, onNavigate }) {
           {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
       </div>
-      <p className="mb-3 hidden px-3 text-xs font-bold uppercase tracking-[0.14em] text-muted md:block">
-        Administración
-      </p>
       <nav
         aria-label="Navegación administrativa"
         className={`${menuOpen ? 'flex' : 'hidden'} absolute left-0 right-0 top-full flex-col gap-1 border-b border-border bg-white p-3 shadow-md md:static md:flex md:border-0 md:bg-transparent md:p-0 md:shadow-none`}

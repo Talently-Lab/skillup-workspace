@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { AlertTriangle, ChevronDown, LogOut, Plus, Search, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Plus, Search, Trash2, X } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
+import Navbar from '../components/layout/Navbar'
 import api from '../services/api'
 import { ROLES } from '../utils/roles'
 import { getErrorMessage } from '../utils/apiErrors'
@@ -76,9 +77,7 @@ function getInitialAdminSection() {
 }
 
 export default function AdminDashboard() {
-  const { user, isAuthenticated, logout } = useAuth()
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
-  const profileMenuRef = useRef(null)
+  const { user, isAuthenticated } = useAuth()
   const [courses, setCourses] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -111,26 +110,6 @@ export default function AdminDashboard() {
       // Keep navigation usable when browser storage is unavailable.
     }
   }, [activeSection])
-
-  useEffect(() => {
-    if (!profileMenuOpen) return undefined
-
-    const closeOnOutsideClick = (event) => {
-      if (!profileMenuRef.current?.contains(event.target)) {
-        setProfileMenuOpen(false)
-      }
-    }
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape') setProfileMenuOpen(false)
-    }
-
-    document.addEventListener('mousedown', closeOnOutsideClick)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutsideClick)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [profileMenuOpen])
 
   const loadCourses = useCallback(async () => {
     setLoading(true)
@@ -382,75 +361,37 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen w-full min-w-0 overflow-x-clip bg-background text-ink md:flex">
-      <AdminSidebar activeSection={activeSection} onNavigate={setActiveSection} />
-      <main className="min-w-0 flex-1">
-        <header className="flex min-w-0 items-center justify-between gap-3 border-b border-border bg-white px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
-          <p className="min-w-0 truncate text-xs font-medium text-muted sm:text-sm">
-            SkillUp Campus / Administración
-          </p>
-          <div className="relative" ref={profileMenuRef}>
-            <button
-              aria-expanded={profileMenuOpen}
-              aria-haspopup="menu"
-              aria-label="Abrir menú de cuenta"
-              className="flex min-h-11 items-center gap-1.5 rounded-full p-1 text-primary transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-              onClick={() => setProfileMenuOpen((open) => !open)}
-              type="button"
+    <>
+      <Navbar />
+      <div className="min-h-screen w-full min-w-0 overflow-x-clip bg-background text-ink md:flex">
+        <AdminSidebar activeSection={activeSection} onNavigate={setActiveSection} />
+        <main className="min-w-0 flex-1">
+          <div className="mx-auto w-full max-w-7xl min-w-0 space-y-6 px-4 py-6 sm:space-y-7 sm:px-6 sm:py-8 lg:px-8">
+            <section
+              className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-center"
             >
-              <span
-                aria-hidden="true"
-                className="flex size-10 items-center justify-center rounded-full bg-secondary text-sm font-bold"
-              >
-                {(user?.firstName?.[0] ?? 'A').toUpperCase()}
-              </span>
-              <ChevronDown aria-hidden="true" size={16} />
-            </button>
-            {profileMenuOpen && (
-              <div
-                className="absolute right-0 top-full z-30 mt-2 min-w-48 rounded-xl border border-border bg-white p-1.5 shadow-lg"
-                role="menu"
-              >
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+                {activeSection === 'summary'
+                  ? 'Resumen general'
+                  : activeSection === 'courses'
+                    ? 'Gestión de cursos'
+                    : 'Gestión de usuarios'}
+              </h1>
+              {activeSection === 'courses' && (
                 <button
-                  className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium text-ink transition hover:bg-slate-50"
-                  onClick={logout}
-                  role="menuitem"
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover sm:w-auto"
+                  onClick={() => {
+                    setDetailError('')
+                    setModalCourse(null)
+                    setCreating(true)
+                  }}
                   type="button"
                 >
-                  <LogOut aria-hidden="true" size={16} />
-                  Cerrar sesión
+                  <Plus size={18} />
+                  Crear curso
                 </button>
-              </div>
-            )}
-          </div>
-        </header>
-
-        <div className="mx-auto w-full max-w-7xl min-w-0 space-y-6 px-4 py-6 sm:space-y-7 sm:px-6 sm:py-8 lg:px-8">
-          <section
-            className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-center"
-          >
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              {activeSection === 'summary'
-                ? 'Resumen general'
-                : activeSection === 'courses'
-                  ? 'Gestión de cursos'
-                  : 'Gestión de usuarios'}
-            </h1>
-            {activeSection === 'courses' && (
-              <button
-                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover sm:w-auto"
-                onClick={() => {
-                  setDetailError('')
-                  setModalCourse(null)
-                  setCreating(true)
-                }}
-                type="button"
-              >
-                <Plus size={18} />
-                Crear curso
-              </button>
-            )}
-          </section>
+              )}
+            </section>
 
           {activeSection === 'summary' && (
             <AdminDashboardSummary
@@ -789,8 +730,9 @@ export default function AdminDashboard() {
               />
             )}
           </section>}
-        </div>
-      </main>
+          </div>
+        </main>
+      </div>
 
       {creating && (
         <CourseFormModal course={null} onClose={() => setCreating(false)} onSaved={handleSaved} />
@@ -881,6 +823,6 @@ export default function AdminDashboard() {
           </section>
         </div>
       )}
-    </div>
+    </>
   )
 }
