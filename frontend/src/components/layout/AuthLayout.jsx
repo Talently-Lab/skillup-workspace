@@ -1,31 +1,13 @@
-import { Link } from 'react-router-dom'
+import Navbar from './Navbar'
 
 export default function AuthLayout({
-  prompt,
-  linkLabel,
-  linkTo,
   legalIntro,
   image,
   children,
 }) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <header className="border-b border-border bg-surface">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <Link to="/">
-            <img src="/images/logo.svg" alt="SkillUp Campus" className="h-8" />
-          </Link>
-          <p className="text-sm text-muted">
-            {prompt}{' '}
-            <Link
-              to={linkTo}
-              className="font-medium text-primary underline underline-offset-4 hover:text-primary-hover"
-            >
-              {linkLabel}
-            </Link>
-          </p>
-        </div>
-      </header>
+      <Navbar />
 
       <div className="grid flex-1 lg:grid-cols-[1fr_clamp(380px,41%,588px)]">
         <main className="flex flex-col justify-between px-6 py-10 sm:px-12 lg:px-20">
