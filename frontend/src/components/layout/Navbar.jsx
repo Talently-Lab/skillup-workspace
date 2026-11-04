@@ -16,12 +16,52 @@ export default function Navbar({ menuOpen = false, onMenuToggle, sticky = false 
   const location = useLocation()
   const isHomePage = location.pathname === '/'
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const menuRef = useRef(null)
+  const mobileMenuRef = useRef(null)
+  const mobileMenuButtonRef = useRef(null)
   const initials = [user?.firstName?.[0], user?.lastName?.[0]]
     .filter(Boolean)
     .join('')
     .toUpperCase() || user?.email?.[0]?.toUpperCase()
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ')
+
+  useEffect(() => {
+    setMobileMenuOpen(false)
+    setAccountMenuOpen(false)
+  }, [location.pathname, location.search, location.hash])
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined
+
+    const closeOnOutsideClick = (event) => {
+      if (
+        !mobileMenuRef.current?.contains(event.target)
+        && !mobileMenuButtonRef.current?.contains(event.target)
+      ) {
+        setMobileMenuOpen(false)
+      }
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') {
+        setMobileMenuOpen(false)
+        mobileMenuButtonRef.current?.focus()
+      }
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [mobileMenuOpen])
+
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      mobileMenuRef.current?.querySelector('a, button')?.focus()
+    }
+  }, [mobileMenuOpen])
 
   useEffect(() => {
     if (!accountMenuOpen) return undefined
@@ -50,7 +90,7 @@ export default function Navbar({ menuOpen = false, onMenuToggle, sticky = false 
         }`}
       >
         <Link aria-label="SkillUp Campus, inicio" className="shrink-0" to="/">
-          <img alt="" className="size-9 w-[30px] object-contain md:hidden" src="/images/logo1.png" />
+          <img alt="SkillUp Campus" className="h-8 max-w-36 object-contain md:hidden" src="/images/logo.svg" />
           <img alt="SkillUp Campus" className="hidden h-9 md:block" src="/images/logo.svg" />
         </Link>
 
@@ -75,7 +115,7 @@ export default function Navbar({ menuOpen = false, onMenuToggle, sticky = false 
         </ul>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-4 md:col-start-3 md:gap-5">
-          {onMenuToggle && (
+          {onMenuToggle ? (
             <button
               aria-controls="student-sidebar"
               aria-expanded={menuOpen}
@@ -85,6 +125,18 @@ export default function Navbar({ menuOpen = false, onMenuToggle, sticky = false 
               type="button"
             >
               {menuOpen ? <X aria-hidden="true" size={23} /> : <Menu aria-hidden="true" size={23} />}
+            </button>
+          ) : (
+            <button
+              ref={mobileMenuButtonRef}
+              aria-controls="skillup-mobile-navigation"
+              aria-expanded={mobileMenuOpen}
+              aria-label={mobileMenuOpen ? 'Cerrar menú de navegación' : 'Abrir menú de navegación'}
+              className="flex size-10 items-center justify-center rounded-lg text-primary transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 md:hidden"
+              onClick={() => setMobileMenuOpen((open) => !open)}
+              type="button"
+            >
+              {mobileMenuOpen ? <X aria-hidden="true" size={24} /> : <Menu aria-hidden="true" size={24} />}
             </button>
           )}
           {isAuthenticated ? (
@@ -139,13 +191,13 @@ export default function Navbar({ menuOpen = false, onMenuToggle, sticky = false 
           ) : (
             <>
               <Link
-                className="whitespace-nowrap text-sm text-ink/70 hover:text-primary sm:text-base"
+                className="hidden whitespace-nowrap text-sm text-ink/70 hover:text-primary sm:text-base md:inline"
                 to="/login"
               >
                 Iniciar sesión
               </Link>
               <Button
-                className="whitespace-nowrap px-3 py-2 text-sm sm:px-4 sm:py-2.5 md:text-base"
+                className="hidden whitespace-nowrap px-3 py-2 text-sm sm:px-4 sm:py-2.5 md:inline-flex md:text-base"
                 to="/registro"
               >
                 Registrarse
@@ -154,6 +206,59 @@ export default function Navbar({ menuOpen = false, onMenuToggle, sticky = false 
           )}
         </div>
       </nav>
+      {!onMenuToggle && (
+        <div
+          className={`${mobileMenuOpen ? 'block' : 'hidden'} absolute left-0 right-0 top-full z-40 px-4 pb-4 md:hidden`}
+          id="skillup-mobile-navigation"
+          ref={mobileMenuRef}
+        >
+          <div className="rounded-2xl border border-primary/10 bg-white p-3 shadow-xl shadow-slate-900/10">
+            <ul aria-label="Enlaces principales" className="flex flex-col gap-1">
+              {links.map(({ to, label, available }) => (
+                <li key={label}>
+                  {available ? (
+                    <NavLink
+                      className={({ isActive }) => `block rounded-xl px-4 py-3 text-base font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                        isActive ? 'bg-primary/10 text-primary' : 'text-ink hover:bg-primary/5 hover:text-primary'
+                      }`}
+                      onClick={() => setMobileMenuOpen(false)}
+                      to={to}
+                    >
+                      {label}
+                    </NavLink>
+                  ) : (
+                    <span
+                      aria-disabled="true"
+                      className="block cursor-not-allowed rounded-xl px-4 py-3 text-base text-ink/50"
+                      title="Blog todavía no está disponible"
+                    >
+                      {label}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {!isAuthenticated && (
+              <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-3">
+                <Link
+                  className="rounded-xl px-4 py-3 text-center text-base font-medium text-ink/75 transition hover:bg-primary/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  onClick={() => setMobileMenuOpen(false)}
+                  to="/login"
+                >
+                  Iniciar sesión
+                </Link>
+                <Button
+                  className="w-full justify-center rounded-xl bg-primary px-4 py-3 text-base font-semibold text-white hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
+                  onClick={() => setMobileMenuOpen(false)}
+                  to="/registro"
+                >
+                  Registrarse
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </header>
   )
 }
