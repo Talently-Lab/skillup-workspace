@@ -211,7 +211,10 @@ public class CourseServiceImpl implements CourseService {
             return false;
         }
         return authentication.getAuthorities().stream()
-                .anyMatch(grantedAuthority -> Objects.equals(grantedAuthority.getAuthority(), "ROLE_ADMIN"));
+                .anyMatch(grantedAuthority ->
+                        Objects.equals(grantedAuthority.getAuthority(), "ADMIN")
+                                || Objects.equals(grantedAuthority.getAuthority(), "ROLE_ADMIN")
+                );
     }
 
     private void registerAssetCleanup(List<StoredAsset> uploadedAssets, List<String> replacedUrls) {

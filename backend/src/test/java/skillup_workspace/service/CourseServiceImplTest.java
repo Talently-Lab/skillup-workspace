@@ -204,6 +204,19 @@ class CourseServiceImplTest {
         }
 
         @Test
+        @DisplayName("getAllCourses - Reconoce la autoridad ADMIN asignada por el filtro JWT")
+        void getAllCourses_WhenUserHasAdminAuthority_ShouldIncludeInactiveCourses() {
+            setupAuthentication("ADMIN");
+            given(courseRepository.findAllCoursesWithFilter(true)).willReturn(List.of(mockCourse));
+            given(courseMapper.toResponseDTOList(anyList())).willReturn(List.of(responseDTO));
+
+            List<CourseResponseDTO> result = courseService.getAllCourses();
+
+            assertNotNull(result);
+            verify(courseRepository).findAllCoursesWithFilter(true);
+        }
+
+        @Test
         @DisplayName("getAllCourses - Devuelve el número de inscripciones activas por curso")
         void getAllCourses_ShouldAddActiveEnrollmentCountToResponse() {
             setupAuthentication("ROLE_ALUMNO");
