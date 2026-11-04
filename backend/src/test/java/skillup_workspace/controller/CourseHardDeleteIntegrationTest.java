@@ -325,6 +325,61 @@ class CourseHardDeleteIntegrationTest {
         assertEquals("Curso actualizado", courseRepository.findById(course.getId()).orElseThrow().getTitle());
     }
 
+    @Test
+    void studentEnrollmentCountExcludesAdminEnrollmentsAndCountsEachEnrollment() throws Exception {
+        Course firstCourse = saveCourse();
+        Course secondCourse = new Course();
+        secondCourse.setTitle("Segundo curso");
+        secondCourse.setSummary("Resumen");
+        secondCourse.setDescription("Descripción");
+        secondCourse.setCategory("Programación");
+        secondCourse.setLevel("Inicial");
+        secondCourse.setDurationHours(8);
+        secondCourse.setDurationWeeks(2);
+        secondCourse = courseRepository.saveAndFlush(secondCourse);
+
+        Enrollment studentEnrollmentOne = new Enrollment();
+        studentEnrollmentOne.setUser(student);
+        studentEnrollmentOne.setCourse(firstCourse);
+        enrollmentRepository.save(studentEnrollmentOne);
+
+        Enrollment studentEnrollmentTwo = new Enrollment();
+        studentEnrollmentTwo.setUser(student);
+        studentEnrollmentTwo.setCourse(secondCourse);
+        enrollmentRepository.save(studentEnrollmentTwo);
+
+        Enrollment adminEnrollment = new Enrollment();
+        adminEnrollment.setUser(admin);
+        adminEnrollment.setCourse(firstCourse);
+        enrollmentRepository.saveAndFlush(adminEnrollment);
+
+        assertEquals(2L, enrollmentRepository.countByStudentRole());
+
+        HttpResponse<String> response = send(
+                HttpMethod.GET,
+                "/api/v1/admin/dashboard-stats",
+                jwtService.generateToken(admin),
+                null
+        );
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"totalCourses\":2"));
+        assertTrue(response.body().contains("\"totalEnrollments\":2"));
+        assertTrue(response.body().contains("\"completedCourses\":null"));
+        assertTrue(response.body().contains("\"completedCoursesAvailable\":false"));
+    }
+
+    @Test
+    void studentCannotReadAdminDashboardStats() throws Exception {
+        HttpResponse<String> response = send(
+                HttpMethod.GET,
+                "/api/v1/admin/dashboard-stats",
+                jwtService.generateToken(student),
+                null
+        );
+
+        assertEquals(403, response.statusCode());
+    }
+
     private Course saveCourse() {
         Course course = new Course();
         course.setTitle("Curso de prueba");

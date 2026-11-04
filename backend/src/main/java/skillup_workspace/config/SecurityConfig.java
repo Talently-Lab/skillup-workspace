@@ -101,6 +101,7 @@ public class SecurityConfig {
                         ).permitAll()
 
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/users/**").hasAuthority("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/admin/dashboard-stats").hasAuthority("ADMIN")
 
                         .requestMatchers(HttpMethod.GET, "/api/v1/courses/**").permitAll()
 

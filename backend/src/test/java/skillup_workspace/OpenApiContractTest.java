@@ -49,7 +49,6 @@ class OpenApiContractTest {
         )));
         assertTrue(!courseSchema.getRequired().contains("durationWeeks"));
         assertTrue(!courseSchema.getRequired().contains("status"));
-        assertTrue(!courseSchema.getRequired().contains("status"));
     }
 
     @Test
