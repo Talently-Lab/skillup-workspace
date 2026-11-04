@@ -1,7 +1,10 @@
 package skillup_workspace.dto.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -44,9 +47,7 @@ public class CourseRequestDTO {
     @Positive(message = "La duración en horas debe ser mayor a cero")
     private Integer durationHours;
 
-    @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotNull(message = "La duración en semanas es obligatoria")
-    @Positive(message = "La duración en semanas debe ser mayor a cero")
+    @Schema(description = "Duración estimada; opcional para cursos grabados")
     private Integer durationWeeks;
 
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -57,6 +58,7 @@ public class CourseRequestDTO {
     @JsonDeserialize(using = IsoLocalDateDeserializer.class)
     private LocalDate nextStartDate;
 
+    @Valid
     private ScheduleRequestDTO schedule;
 
     private List<String> learningGoals;
@@ -64,4 +66,16 @@ public class CourseRequestDTO {
     private List<String> objectives;
 
     private List<ContentModuleRequestDTO> contentModules;
+
+    @AssertTrue(message = "La duración en semanas debe ser mayor a cero, excepto en cursos grabados")
+    @JsonIgnore
+    @Schema(hidden = true)
+    public boolean isDurationWeeksValid() {
+        boolean recordedCourse = modality != null
+                && modality.getType() != null
+                && modality.getType().trim().equalsIgnoreCase("GRABADO");
+        return recordedCourse
+                ? durationWeeks == null || durationWeeks > 0
+                : durationWeeks != null && durationWeeks > 0;
+    }
 }

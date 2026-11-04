@@ -353,6 +353,131 @@ class CourseControllerTest {
     }
 
     @Test
+    @DisplayName("POST /api/v1/courses - Debería aceptar la duración exacta y el contenido grabado en minutos")
+    void createCourse_ShouldAcceptScheduleWorkloadMinutes() throws Exception {
+        given(courseService.createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        ))
+                .willReturn(new CourseDetailResponseDTO());
+
+        performCreate("""
+                                {
+                                  "title": "Curso híbrido",
+                                  "summary": "Resumen",
+                                  "description": "Descripción",
+                                  "category": "Diseño",
+                                  "level": "Intermedio",
+                                  "durationHours": 13,
+                                  "durationWeeks": 4,
+                                  "schedule": {
+                                    "days": "Lunes",
+                                    "startTime": "17:30",
+                                    "endTime": "19:00",
+                                    "totalDurationMinutes": 750,
+                                    "recordedContentMinutes": 390
+                                  },
+                                  "modality": {}
+                                }
+                                """)
+                .andExpect(status().isCreated());
+
+        Mockito.verify(courseService).createCourse(
+                Mockito.argThat(request ->
+                        request.getSchedule() != null
+                                && Integer.valueOf(750).equals(request.getSchedule().getTotalDurationMinutes())
+                                && Integer.valueOf(390).equals(request.getSchedule().getRecordedContentMinutes())
+                ),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/courses - Debería rechazar duraciones negativas en el horario")
+    void createCourse_ShouldRejectNegativeScheduleWorkloadMinutes() throws Exception {
+        performCreate("""
+                                {
+                                  "title": "Curso grabado",
+                                  "summary": "Resumen",
+                                  "description": "Descripción",
+                                  "category": "Diseño",
+                                  "level": "Intermedio",
+                                  "durationHours": 1,
+                                  "durationWeeks": 1,
+                                  "schedule": {
+                                    "recordedContentMinutes": -1
+                                  },
+                                  "modality": {}
+                                }
+                                """)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+
+        Mockito.verify(courseService, Mockito.never()).createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/courses - Debería permitir duración en semanas omitida para un curso grabado")
+    void createCourse_ShouldAllowMissingDurationWeeksForRecordedCourse() throws Exception {
+        given(courseService.createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        ))
+                .willReturn(new CourseDetailResponseDTO());
+
+        performCreate("""
+                                {
+                                  "title": "Curso grabado",
+                                  "summary": "Resumen",
+                                  "description": "Descripción",
+                                  "category": "Diseño",
+                                  "level": "Intermedio",
+                                  "durationHours": 5,
+                                  "modality": { "type": "GRABADO" },
+                                  "schedule": { "recordedContentMinutes": 300, "totalDurationMinutes": 300 }
+                                }
+                                """)
+                .andExpect(status().isCreated());
+
+        Mockito.verify(courseService).createCourse(
+                Mockito.argThat(request -> request.getDurationWeeks() == null),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/courses - Debería exigir semanas en cursos en vivo")
+    void createCourse_ShouldRequireDurationWeeksForLiveCourse() throws Exception {
+        performCreate("""
+                                {
+                                  "title": "Curso en vivo",
+                                  "summary": "Resumen",
+                                  "description": "Descripción",
+                                  "category": "Diseño",
+                                  "level": "Intermedio",
+                                  "durationHours": 5,
+                                  "modality": { "type": "EN VIVO" }
+                                }
+                                """)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+
+        Mockito.verify(courseService, Mockito.never()).createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
+    }
+
+    @Test
     @DisplayName("PUT /api/v1/courses/{id} - Debería actualizar un curso y retornar HttpStatus 200 OK")
     void updateCourse_ShouldReturnUpdatedCourse() throws Exception {
         Long courseId = 1L;

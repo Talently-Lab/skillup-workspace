@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import skillup_workspace.controller.AuthController;
 import skillup_workspace.controller.CourseController;
 import skillup_workspace.dto.request.CourseRequestDTO;
+import skillup_workspace.dto.request.ScheduleRequestDTO;
 import skillup_workspace.dto.request.LoginRequest;
 import skillup_workspace.dto.request.RegisterRequest;
 import org.springframework.web.multipart.MultipartFile;
@@ -42,9 +43,20 @@ class OpenApiContractTest {
                 "category",
                 "level",
                 "durationHours",
-                "durationWeeks",
                 "modality"
         )));
+        assertTrue(!courseSchema.getRequired().contains("durationWeeks"));
+    }
+
+    @Test
+    void scheduleSchemaExposesOptionalMinutePrecisionWorkloadFields() {
+        Map<String, Schema> schemas = ModelConverters.getInstance().read(ScheduleRequestDTO.class);
+        Schema<?> scheduleSchema = schemas.get("ScheduleRequestDTO");
+
+        assertNotNull(scheduleSchema);
+        assertTrue(scheduleSchema.getProperties().containsKey("totalDurationMinutes"));
+        assertTrue(scheduleSchema.getProperties().containsKey("recordedContentMinutes"));
+        assertTrue(scheduleSchema.getRequired() == null || scheduleSchema.getRequired().isEmpty());
     }
 
     @Test
