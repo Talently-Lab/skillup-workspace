@@ -12,19 +12,23 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import skillup_workspace.controller.AdminUserController;
 import skillup_workspace.controller.CourseController;
+import skillup_workspace.dto.response.AdminUserResponseDTO;
 import skillup_workspace.entity.User;
 import skillup_workspace.exception.GlobalExceptionHandler;
 import skillup_workspace.exception.ResourceNotFoundException;
 import skillup_workspace.repository.UserRepository;
 import skillup_workspace.security.JwtAuthenticationFilter;
 import skillup_workspace.security.JwtService;
+import skillup_workspace.service.AdminUserService;
 import skillup_workspace.service.CourseService;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -54,6 +58,48 @@ class SecurityAuthorizationHttpTest {
 
     @MockBean
     private CourseService courseService;
+
+    @MockBean
+    private AdminUserService adminUserService;
+
+    @Test
+    void getUsersWithoutTokenReturns401OverHttp() throws Exception {
+        HttpResponse<String> response = getUsers(null);
+
+        assertEquals(401, response.statusCode());
+        assertTrue(response.body().contains("\"status\":401"));
+        verifyNoInteractions(adminUserService);
+    }
+
+    @Test
+    void getUsersWithStudentTokenReturns403OverHttp() throws Exception {
+        User student = user("student@example.com", "ALUMNO");
+        given(jwtService.extractUsername("student-token")).willReturn(student.getEmail());
+        given(userRepository.findByEmail(student.getEmail())).willReturn(Optional.of(student));
+        given(jwtService.isTokenValid("student-token", student)).willReturn(true);
+
+        HttpResponse<String> response = getUsers("student-token");
+
+        assertEquals(403, response.statusCode());
+        assertTrue(response.body().contains("\"status\":403"));
+        verifyNoInteractions(adminUserService);
+    }
+
+    @Test
+    void getUsersWithAdminTokenReturnsUsersOverHttp() throws Exception {
+        User admin = user("admin@example.com", "ADMIN");
+        given(jwtService.extractUsername("admin-token")).willReturn(admin.getEmail());
+        given(userRepository.findByEmail(admin.getEmail())).willReturn(Optional.of(admin));
+        given(jwtService.isTokenValid("admin-token", admin)).willReturn(true);
+        given(adminUserService.getAllUsers()).willReturn(List.of(
+                new AdminUserResponseDTO(1L, "Ana", "Pérez", "ana@example.com", "ALUMNO")
+        ));
+
+        HttpResponse<String> response = getUsers("admin-token");
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"email\":\"ana@example.com\""));
+    }
 
     @Test
     void deleteWithoutTokenReturns401JsonOverHttp() throws Exception {
@@ -161,6 +207,16 @@ class SecurityAuthorizationHttpTest {
         return HTTP_CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    private HttpResponse<String> getUsers(String token) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/admin/users"))
+                .GET();
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return HTTP_CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
     private User user(String email, String role) {
         User user = new User();
         user.setId(2L);
@@ -177,6 +233,7 @@ class SecurityAuthorizationHttpTest {
     @Import({
             SecurityConfig.class,
             JwtAuthenticationFilter.class,
+            AdminUserController.class,
             CourseController.class,
             GlobalExceptionHandler.class
     })
