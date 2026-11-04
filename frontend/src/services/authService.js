@@ -11,6 +11,10 @@ function normalizeRole(role) {
   return value.replace(/^ROLE_/, '').toUpperCase()
 }
 
+function firstNonEmptyString(...values) {
+  return values.find((value) => typeof value === 'string' && value.trim())?.trim() ?? ''
+}
+
 // ⚠️ A CONFIRMAR con la respuesta real del login (Postman).
 // Es el único lugar donde se interpreta lo que devuelve el servidor.
 function normalizeSession(data) {
@@ -19,15 +23,18 @@ function normalizeSession(data) {
     throw new Error('La respuesta del login no incluye el token')
   }
 
-  const raw = data?.user ?? data?.usuario ?? data
+  const payload = data?.data ?? data
+  const raw = payload?.user ?? payload?.usuario ?? payload
   return {
     token,
     user: {
-      id: raw?.id ?? raw?.userId,
-      firstName: raw?.firstName ?? '',
-      lastName: raw?.lastName ?? '',
-      email: raw?.email ?? '',
-      role: normalizeRole(raw?.role ?? raw?.rol ?? raw?.roles?.[0]),
+      id: raw?.id ?? raw?.userId ?? payload?.id ?? data?.id,
+      firstName: firstNonEmptyString(raw?.firstName, payload?.firstName, data?.firstName),
+      lastName: firstNonEmptyString(raw?.lastName, payload?.lastName, data?.lastName),
+      email: raw?.email ?? payload?.email ?? data?.email ?? '',
+      role: normalizeRole(
+        raw?.role ?? raw?.rol ?? raw?.roles?.[0] ?? payload?.role ?? data?.role,
+      ),
     },
   }
 }

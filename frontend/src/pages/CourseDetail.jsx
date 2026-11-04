@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, CheckCircle2, Clock3, Download, Radio, Signal, Video } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Clock3, Download, Heart, Radio, Signal, Video } from 'lucide-react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
-import { enrollInCourse, getCourse } from '../services/courseService'
+import {
+  addCourseFavorite,
+  enrollInCourse,
+  getCourse,
+  getCourseFavorite,
+  removeCourseFavorite,
+} from '../services/courseService'
 import { getErrorMessage } from '../utils/apiErrors'
+import { isAlreadyEnrolled } from '../utils/enrollmentErrors'
 import { formatMinutes, parseScheduleDays } from '../utils/courseSchedule'
 
 const COURSE_TABS = [
@@ -61,8 +68,16 @@ export default function CourseDetail() {
   const [courseResult, setCourseResult] = useState({ id: null, course: null, error: '' })
   const [activeTab, setActiveTab] = useState('description')
   const [enrolling, setEnrolling] = useState(false)
-  const [enrollmentMessage, setEnrollmentMessage] = useState('')
-  const [enrollmentError, setEnrollmentError] = useState('')
+  const [enrollmentError, setEnrollmentError] = useState(
+    () => location.state?.enrollmentError ?? '',
+  )
+  const [favoriteState, setFavoriteState] = useState({
+    courseId: null,
+    favorited: false,
+    status: 'idle',
+    error: '',
+  })
+  const [imageErrorCourseId, setImageErrorCourseId] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -81,6 +96,37 @@ export default function CourseDetail() {
   const loading = courseResult.id !== id
   const course = loading ? null : courseResult.course
   const error = loading ? '' : courseResult.error
+
+  useEffect(() => {
+    if (!course || user?.role !== 'ALUMNO' || !isAuthenticated) return undefined
+
+    let active = true
+    getCourseFavorite(course.id)
+      .then((result) => {
+        if (active) {
+          setFavoriteState({
+            courseId: course.id,
+            favorited: result.favorited,
+            status: 'loaded',
+            error: '',
+          })
+        }
+      })
+      .catch((requestError) => {
+        if (active) {
+          setFavoriteState({
+            courseId: course.id,
+            favorited: false,
+            status: 'error',
+            error: requestError.response?.status === 401 ? 'unauthorized' : 'unavailable',
+          })
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [course, isAuthenticated, user?.role])
+
   const modality = useMemo(() => (course ? getModalityInfo(course) : null), [course])
   const savedDurationMinutes = Number(course?.schedule?.totalDurationMinutes)
   const durationMinutes = savedDurationMinutes > 0
@@ -97,12 +143,18 @@ export default function CourseDetail() {
   ].filter((objective) => typeof objective === 'string' && objective.trim())
   const modules = Array.isArray(course?.contentModules) ? course.contentModules : []
   const courseIsActive = course?.isActive !== false
+  const currentFavoriteState = favoriteState.courseId === course?.id ? favoriteState : null
+  const favorite = currentFavoriteState?.favorited ?? false
+  const favoriteLoading =
+    currentFavoriteState?.status === 'loading' ||
+    (isAuthenticated && user?.role === 'ALUMNO' && !currentFavoriteState)
 
   const handleEnroll = async () => {
-    setEnrollmentMessage('')
     setEnrollmentError('')
     if (!isAuthenticated) {
-      navigate('/login', { state: { from: location } })
+      navigate('/registro', {
+        state: { pendingEnrollment: { courseId: course.id, course } },
+      })
       return
     }
     if (user?.role !== 'ALUMNO') {
@@ -112,26 +164,88 @@ export default function CourseDetail() {
 
     setEnrolling(true)
     try {
-      const enrollment = await enrollInCourse(course.id)
-      setEnrollmentMessage(`Inscripción realizada para ${enrollment.courseTitle || course.title}.`)
+      await enrollInCourse(course.id)
+      navigate('/inscripcion/confirmacion', {
+        replace: true,
+        state: { courseId: course.id, course, enrollmentConfirmed: true },
+      })
     } catch (requestError) {
       if (requestError.response?.status === 401) {
-        navigate('/login', { state: { from: location } })
+        navigate('/login', {
+          state: { pendingEnrollment: { courseId: course.id, course } },
+        })
+      } else if (isAlreadyEnrolled(requestError)) {
+        navigate('/inscripcion/confirmacion', {
+          replace: true,
+          state: { courseId: course.id, course, alreadyEnrolled: true },
+        })
       } else {
-        setEnrollmentError(getErrorMessage(requestError))
+        setEnrollmentError(
+          requestError.response?.status === 404
+            ? 'Este curso ya no está disponible para inscripción.'
+            : 'No pudimos completar la inscripción. Inténtalo nuevamente.',
+        )
       }
     } finally {
       setEnrolling(false)
     }
   }
 
+  const handleToggleFavorite = async () => {
+    if (favoriteLoading) return
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: location } })
+      return
+    }
+    if (user?.role !== 'ALUMNO') {
+      setFavoriteState({
+        courseId: course.id,
+        favorited: false,
+        status: 'error',
+        error: 'unavailable',
+      })
+      return
+    }
+
+    setFavoriteState({
+      courseId: course.id,
+      favorited: favorite,
+      status: 'loading',
+      error: '',
+    })
+    try {
+      if (favorite) {
+        await removeCourseFavorite(course.id)
+      } else {
+        await addCourseFavorite(course.id)
+      }
+      setFavoriteState({
+        courseId: course.id,
+        favorited: !favorite,
+        status: 'loaded',
+        error: '',
+      })
+    } catch (requestError) {
+      if (requestError.response?.status === 401) {
+        navigate('/login', { state: { from: location } })
+      } else {
+        setFavoriteState({
+          courseId: course.id,
+          favorited: favorite,
+          status: 'error',
+          error: 'unavailable',
+        })
+      }
+    }
+  }
+
   if (loading) {
-    return <p className="mx-auto max-w-7xl px-4 py-16 text-sm text-muted" role="status">Cargando curso...</p>
+    return <p className="mx-auto max-w-7xl px-5 py-16 text-sm text-muted sm:px-6 md:px-8" role="status">Cargando curso...</p>
   }
 
   if (error || !course) {
     return (
-      <section className="mx-auto max-w-7xl px-4 py-12">
+      <section className="mx-auto max-w-7xl px-5 py-12 sm:px-6 md:px-8">
         <Link className="inline-flex items-center gap-2 text-sm font-medium text-primary" to="/cursos">
           <ArrowLeft aria-hidden="true" size={16} /> Volver al catálogo
         </Link>
@@ -145,18 +259,25 @@ export default function CourseDetail() {
   const ModalityIcon = modality.icon
 
   return (
-    <article className="mx-auto max-w-7xl px-4 py-6 sm:py-10">
-      <Link className="inline-flex min-h-10 items-center gap-2 text-sm font-medium text-primary hover:text-primary-hover" to="/cursos">
+    <article className="mx-auto max-w-7xl px-5 py-5 sm:px-6 md:px-8 md:py-7">
+      <Link className="inline-flex min-h-8 items-center gap-2 text-sm font-medium text-primary hover:text-primary-hover" to="/cursos">
         <ArrowLeft aria-hidden="true" size={16} />
         Volver al catálogo
       </Link>
 
-      <section className="mt-4 grid items-start gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)] lg:gap-12">
-        <div className="overflow-hidden rounded-2xl bg-secondary">
-          {course.imageUrl ? (
-            <img className="aspect-[3/2] w-full object-cover" src={course.imageUrl} alt={course.title} />
+      <section className="mt-3 grid items-center gap-5 md:grid-cols-[minmax(0,345px)_minmax(0,1fr)] md:gap-8">
+        <div className="w-full overflow-hidden rounded-xl bg-secondary md:max-w-[345px]">
+          {course.imageUrl && imageErrorCourseId !== course.id ? (
+            <img
+              className="aspect-[345/205] w-full object-cover"
+              src={course.imageUrl}
+              alt={course.title}
+              onError={() => setImageErrorCourseId(course.id)}
+            />
           ) : (
-            <div aria-hidden="true" className="aspect-[3/2] w-full" />
+            <div aria-hidden="true" className="flex aspect-[345/205] w-full items-center justify-center bg-blue-50 text-sm font-medium text-primary">
+              Imagen no disponible
+            </div>
           )}
         </div>
 
@@ -166,64 +287,71 @@ export default function CourseDetail() {
               {course.category}
             </span>
           )}
-          <h1 className="mt-3 text-3xl font-bold leading-tight text-ink sm:text-4xl">{course.title}</h1>
-          {course.summary && <p className="mt-3 text-base leading-7 text-muted">{course.summary}</p>}
+          <h1 className="mt-2 text-2xl font-bold leading-tight text-ink sm:text-3xl">{course.title}</h1>
+          {course.summary && <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{course.summary}</p>}
 
-          <div className="mt-6 grid w-full gap-3 sm:grid-cols-2">
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted">
             {course.durationWeeks != null && (
-              <div className="flex items-center gap-3 rounded-xl border border-border bg-white p-3.5">
-                <Clock3 aria-hidden="true" className="shrink-0 text-primary" size={19} />
-                <span className="text-sm text-ink"><strong>{course.durationWeeks} semanas</strong> estimadas</span>
-              </div>
+              <span className="inline-flex items-center gap-2">
+                <Clock3 aria-hidden="true" className="text-primary" size={16} />
+                {course.durationWeeks} semanas
+              </span>
             )}
             {durationMinutes > 0 && (
-              <div className="flex items-center gap-3 rounded-xl border border-border bg-white p-3.5">
-                <Clock3 aria-hidden="true" className="shrink-0 text-primary" size={19} />
-                <span className="text-sm text-ink"><strong>{formatMinutes(durationMinutes)}</strong> de carga total</span>
-              </div>
+              <span className="inline-flex items-center gap-2">
+                <Clock3 aria-hidden="true" className="text-primary" size={16} />
+                {formatMinutes(durationMinutes)}
+              </span>
             )}
             {course.level && (
-              <div className="flex items-center gap-3 rounded-xl border border-border bg-white p-3.5">
-                <Signal aria-hidden="true" className="shrink-0 text-primary" size={19} />
-                <span className="text-sm text-ink">Nivel <strong>{course.level}</strong></span>
-              </div>
+              <span className="inline-flex items-center gap-2">
+                <Signal aria-hidden="true" className="text-primary" size={16} />
+                {course.level}
+              </span>
             )}
-            <div className="flex items-center gap-3 rounded-xl border border-border bg-white p-3.5">
-              <ModalityIcon aria-hidden="true" className="shrink-0 text-primary" size={19} />
-              <span className="text-sm text-ink">Modalidad <strong>{modality.label}</strong></span>
-            </div>
-            {modality.frequency && (
-              <div className="flex items-center gap-3 rounded-xl border border-border bg-white p-3.5 sm:col-span-2">
-                <Radio aria-hidden="true" className="shrink-0 text-primary" size={19} />
-                <span className="text-sm text-ink">Frecuencia <strong>{modality.frequency}</strong></span>
-              </div>
-            )}
-            {modality.hasLiveClasses && course.schedule?.days && (
-              <div className="rounded-xl border border-border bg-white p-3.5 text-sm text-ink sm:col-span-2">
-                <p><strong>Días:</strong> {course.schedule.days}</p>
-                {(course.schedule.startTime || course.schedule.endTime) && (
-                  <p className="mt-1">
-                    <strong>Horario:</strong> {course.schedule.startTime || '—'} – {course.schedule.endTime || '—'}
-                  </p>
-                )}
-              </div>
-            )}
+            <span className="inline-flex items-center gap-2">
+              <ModalityIcon aria-hidden="true" className="text-primary" size={16} />
+              {modality.label}
+            </span>
           </div>
+          {modality.frequency && (
+            <p className="mt-2 text-sm text-muted">
+              {modality.frequency}
+              {modality.hasLiveClasses && course.schedule?.days ? ` · ${course.schedule.days}` : ''}
+              {modality.hasLiveClasses && (course.schedule?.startTime || course.schedule?.endTime)
+                ? ` · ${course.schedule.startTime || '—'} – ${course.schedule.endTime || '—'}`
+                : ''}
+            </p>
+          )}
 
-          <button
-            className="mt-6 min-h-12 w-full rounded-button bg-primary px-6 py-3 text-base font-semibold text-white transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-            disabled={enrolling || !courseIsActive}
-            onClick={handleEnroll}
-            type="button"
-          >
-            {!courseIsActive ? 'Curso no disponible' : enrolling ? 'Procesando inscripción...' : 'Inscribirme'}
-          </button>
-          {enrollmentMessage && <p className="mt-3 text-sm text-emerald-700" role="status">{enrollmentMessage}</p>}
+          <div className="mt-4 flex w-full flex-wrap items-center gap-3">
+            <button
+              className="min-h-10 rounded-button bg-primary px-6 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={enrolling || !courseIsActive}
+              onClick={handleEnroll}
+              type="button"
+            >
+              {!courseIsActive ? 'Curso no disponible' : enrolling ? 'Procesando inscripción...' : 'Inscribirme'}
+            </button>
+            <button
+              aria-label={favorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+              aria-pressed={favorite}
+              className={`inline-flex size-10 items-center justify-center rounded-lg border border-border bg-white transition hover:border-primary hover:text-primary ${
+                favorite ? 'text-primary' : 'text-muted'
+              }`}
+              aria-busy={favoriteLoading}
+              onClick={handleToggleFavorite}
+              title={user?.role && user.role !== 'ALUMNO' ? 'Disponible para estudiantes' : undefined}
+              type="button"
+            >
+              <Heart aria-hidden="true" fill={favorite ? 'currentColor' : 'none'} size={18} />
+            </button>
+          </div>
           {enrollmentError && <p className="mt-3 text-sm text-red-700" role="alert">{enrollmentError}</p>}
         </div>
       </section>
 
-      <section className="mt-10 border-b border-border">
+      <section className="mt-6 border-b border-border">
         <nav aria-label="Secciones del curso" className="flex gap-7 overflow-x-auto" role="tablist">
           {COURSE_TABS.map(({ id: tabId, label }) => (
             <button
@@ -249,13 +377,13 @@ export default function CourseDetail() {
       <section
         aria-labelledby={`course-tab-${activeTab}`}
         aria-live="polite"
-        className="max-w-4xl py-7"
+        className="max-w-4xl py-5"
         id="course-tabpanel"
         role="tabpanel"
       >
         {activeTab === 'description' && (
           <div className="space-y-5">
-            <h2 className="text-xl font-bold text-ink">Descripción del curso</h2>
+            <h2 className="text-lg font-bold text-ink">¿Qué vas a aprender?</h2>
             <p className="whitespace-pre-line text-sm leading-7 text-muted">
               {course.description || course.summary || 'No hay una descripción disponible.'}
             </p>

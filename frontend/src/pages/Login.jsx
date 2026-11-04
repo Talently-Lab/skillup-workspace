@@ -8,11 +8,15 @@ import { useAuth } from '../context/useAuth'
 import { validateLogin } from '../utils/validators'
 import { getAuthErrorMessage } from '../services/authService'
 import { getHomeForRole } from '../utils/roles'
+import { enrollInCourse } from '../services/courseService'
+import { getPendingCourseId, isAlreadyEnrolled } from '../utils/enrollmentErrors'
 
 export default function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const pendingCourseId = getPendingCourseId(location.state)
+  const pendingCourse = location.state?.pendingEnrollment?.course
 
   const [form, setForm] = useState({ email: '', password: '' })
   const [remember, setRemember] = useState(false)
@@ -37,6 +41,37 @@ export default function Login() {
     setLoading(true)
     try {
       const user = await login(form, remember)
+      if (pendingCourseId) {
+        try {
+          await enrollInCourse(pendingCourseId)
+          navigate('/inscripcion/confirmacion', {
+            replace: true,
+            state: {
+              courseId: pendingCourseId,
+              course: pendingCourse,
+              enrollmentConfirmed: true,
+            },
+          })
+        } catch (error) {
+          if (isAlreadyEnrolled(error)) {
+            navigate('/inscripcion/confirmacion', {
+              replace: true,
+              state: { courseId: pendingCourseId, course: pendingCourse, alreadyEnrolled: true },
+            })
+          } else {
+            navigate(`/cursos/${pendingCourseId}`, {
+              replace: true,
+              state: {
+                enrollmentError: error.response?.status === 404
+                  ? 'Este curso ya no está disponible para inscripción.'
+                  : 'No pudimos completar la inscripción. Tu sesión sigue activa; puedes intentarlo nuevamente.',
+              },
+            })
+          }
+        }
+        return
+      }
+
       const returnTo = location.state?.from
       navigate(
         returnTo
@@ -53,9 +88,6 @@ export default function Login() {
 
   return (
     <AuthLayout
-      prompt="¿No tenés cuenta?"
-      linkLabel="Registrate"
-      linkTo="/registro"
       legalIntro="Al iniciar sesión, estás aceptando nuestros"
       image="/images/login.jpg"
     >
