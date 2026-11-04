@@ -12,6 +12,11 @@ import java.util.List;
 public interface CourseRepository extends JpaRepository<Course, Long> {
 
     List<Course> findByIsActiveTrue();
+
+    boolean existsByImageUrl(String imageUrl);
+
+    boolean existsBySyllabusUrl(String syllabusUrl);
+
     @Query("SELECT c FROM Course c WHERE :includeInactive = true OR c.isActive = true")
     List<Course> findAllCoursesWithFilter(@Param("includeInactive") boolean includeInactive);
 }

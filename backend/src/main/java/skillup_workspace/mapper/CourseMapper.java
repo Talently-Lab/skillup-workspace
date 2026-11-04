@@ -16,6 +16,8 @@ public interface CourseMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "isActive", ignore = true)
+    @Mapping(target = "imageUrl", ignore = true)
+    @Mapping(target = "syllabusUrl", ignore = true)
     Course toEntity(CourseRequestDTO dto);
 
     CourseResponseDTO toResponseDTO(Course course);
@@ -27,5 +29,7 @@ public interface CourseMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "isActive", ignore = true)
+    @Mapping(target = "imageUrl", ignore = true)
+    @Mapping(target = "syllabusUrl", ignore = true)
     void updateEntityFromDto(CourseRequestDTO dto, @MappingTarget Course course);
 }

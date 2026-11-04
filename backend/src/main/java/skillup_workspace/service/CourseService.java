@@ -3,6 +3,7 @@ package skillup_workspace.service;
 import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
 import skillup_workspace.dto.response.CourseResponseDTO;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -14,7 +15,20 @@ public interface CourseService {
 
     CourseDetailResponseDTO createCourse(CourseRequestDTO requestDTO);
 
+    CourseDetailResponseDTO createCourse(
+            CourseRequestDTO requestDTO,
+            MultipartFile image,
+            MultipartFile syllabus
+    );
+
     CourseDetailResponseDTO updateCourse(Long id, CourseRequestDTO requestDTO);
+
+    CourseDetailResponseDTO updateCourse(
+            Long id,
+            CourseRequestDTO requestDTO,
+            MultipartFile image,
+            MultipartFile syllabus
+    );
 
     void deleteCourse(Long id);
 }

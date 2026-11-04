@@ -6,14 +6,18 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mockito;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.mock.web.MockPart;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.multipart.MultipartFile;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 import skillup_workspace.config.JsonTypeValidationConfig;
 import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.request.ModalityRequestDTO;
@@ -27,6 +31,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
@@ -41,10 +46,10 @@ class CourseControllerTest {
     @Mock
     private CourseService courseService;
 
-    @InjectMocks
     private CourseController courseController;
 
     private ObjectMapper objectMapper;
+    private Validator validator;
 
     private CourseRequestDTO validCourseRequestDTO() {
         CourseRequestDTO requestDTO = new CourseRequestDTO();
@@ -59,11 +64,31 @@ class CourseControllerTest {
         return requestDTO;
     }
 
+    private MockPart coursePart(String json) {
+        return coursePart(json, MediaType.APPLICATION_JSON_VALUE);
+    }
+
+    private MockPart coursePart(String json, String contentType) {
+        MockPart part = new MockPart(
+                "course",
+                "course.json",
+                json.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+        part.getHeaders().setContentType(MediaType.parseMediaType(contentType));
+        return part;
+    }
+
+    private org.springframework.test.web.servlet.ResultActions performCreate(String json) throws Exception {
+        return mockMvc.perform(multipart("/api/v1/courses").part(coursePart(json)));
+    }
+
     @BeforeEach
     void setUp() {
         Jackson2ObjectMapperBuilder objectMapperBuilder = new Jackson2ObjectMapperBuilder();
         new JsonTypeValidationConfig().strictJsonTypeCoercion().customize(objectMapperBuilder);
         objectMapper = objectMapperBuilder.build();
+        validator = Validation.buildDefaultValidatorFactory().getValidator();
+        courseController = new CourseController(courseService, objectMapper, validator);
         mockMvc = MockMvcBuilders.standaloneSetup(courseController)
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .setControllerAdvice(new GlobalExceptionHandler())
@@ -109,20 +134,87 @@ class CourseControllerTest {
         CourseRequestDTO requestDTO = validCourseRequestDTO();
         CourseDetailResponseDTO createdResponse = new CourseDetailResponseDTO();
 
-        given(courseService.createCourse(any(CourseRequestDTO.class))).willReturn(createdResponse);
+        given(courseService.createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        )).willReturn(createdResponse);
 
-        mockMvc.perform(post("/api/v1/courses")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(requestDTO)))
+        mockMvc.perform(multipart("/api/v1/courses")
+                        .part(coursePart(objectMapper.writeValueAsString(requestDTO))))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/courses - Acepta JSON aunque la parte llegue como octet-stream")
+    void createCourse_ShouldAcceptOctetStreamCoursePart() throws Exception {
+        given(courseService.createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        )).willReturn(new CourseDetailResponseDTO());
+
+        mockMvc.perform(multipart("/api/v1/courses")
+                        .part(coursePart(
+                                objectMapper.writeValueAsString(validCourseRequestDTO()),
+                                MediaType.APPLICATION_OCTET_STREAM_VALUE
+                        )))
+                .andExpect(status().isCreated());
+
+        Mockito.verify(courseService).createCourse(
+                Mockito.argThat(request -> "Curso de Java".equals(request.getTitle())),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/courses - Valida campos requeridos tras deserializar la parte")
+    void createCourse_ShouldValidateDeserializedCoursePart() throws Exception {
+        performCreate("{}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.message.title").value("El campo title es obligatorio"));
+
+        Mockito.verify(courseService, Mockito.never()).createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/courses - Debería entregar los archivos opcionales al servicio")
+    void createCourse_ShouldPassOptionalFilesToService() throws Exception {
+        MockMultipartFile image = new MockMultipartFile(
+                "image", "cover.webp", "image/webp", new byte[]{1, 2, 3}
+        );
+        MockMultipartFile syllabus = new MockMultipartFile(
+                "syllabus", "program.pdf", "application/pdf", new byte[]{4, 5, 6}
+        );
+        given(courseService.createCourse(
+                any(CourseRequestDTO.class),
+                any(MultipartFile.class),
+                any(MultipartFile.class)
+        )).willReturn(new CourseDetailResponseDTO());
+
+        mockMvc.perform(multipart("/api/v1/courses")
+                        .part(coursePart(objectMapper.writeValueAsString(validCourseRequestDTO())))
+                        .file(image)
+                        .file(syllabus))
+                .andExpect(status().isCreated());
+
+        Mockito.verify(courseService).createCourse(
+                any(CourseRequestDTO.class),
+                Mockito.argThat(file -> file != null && "cover.webp".equals(file.getOriginalFilename())),
+                Mockito.argThat(file -> file != null && "program.pdf".equals(file.getOriginalFilename()))
+        );
     }
 
     @Test
     @DisplayName("POST /api/v1/courses - Debería retornar 400 para un valor numérico inválido")
     void createCourse_ShouldReturnBadRequestWhenNumericFieldHasInvalidType() throws Exception {
-        mockMvc.perform(post("/api/v1/courses")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+        performCreate("""
                                 {
                                   "title": "Diseño UX/UI",
                                   "summary": "Resumen",
@@ -133,22 +225,24 @@ class CourseControllerTest {
                                   "durationWeeks": 13,
                                   "modality": {}
                                 }
-                                """))
+                                """)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.message").value(
                         "El JSON contiene valores inválidos o incompatibles con el tipo esperado."
                 ));
 
-        Mockito.verify(courseService, Mockito.never()).createCourse(any(CourseRequestDTO.class));
+        Mockito.verify(courseService, Mockito.never()).createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
     }
 
     @Test
     @DisplayName("POST /api/v1/courses - Debería rechazar números para campos de texto")
     void createCourse_ShouldReturnBadRequestWhenTextFieldIsNumeric() throws Exception {
-        mockMvc.perform(post("/api/v1/courses")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+        performCreate("""
                                 {
                                   "title": "Diseño UX/UI",
                                   "summary": "Resumen",
@@ -164,19 +258,21 @@ class CourseControllerTest {
                                   },
                                   "modality": {}
                                 }
-                                """))
+                                """)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
 
-        Mockito.verify(courseService, Mockito.never()).createCourse(any(CourseRequestDTO.class));
+        Mockito.verify(courseService, Mockito.never()).createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
     }
 
     @Test
     @DisplayName("POST /api/v1/courses - Debería rechazar texto para campos numéricos")
     void createCourse_ShouldReturnBadRequestWhenNumericFieldIsString() throws Exception {
-        mockMvc.perform(post("/api/v1/courses")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+        performCreate("""
                                 {
                                   "title": "Diseño UX/UI",
                                   "summary": "Resumen",
@@ -187,19 +283,21 @@ class CourseControllerTest {
                                   "durationWeeks": 13,
                                   "modality": {}
                                 }
-                                """))
+                                """)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
 
-        Mockito.verify(courseService, Mockito.never()).createCourse(any(CourseRequestDTO.class));
+        Mockito.verify(courseService, Mockito.never()).createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
     }
 
     @Test
     @DisplayName("POST /api/v1/courses - Debería rechazar nextStartDate numérica")
     void createCourse_ShouldReturnBadRequestWhenNextStartDateIsNumeric() throws Exception {
-        mockMvc.perform(post("/api/v1/courses")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+        performCreate("""
                                 {
                                   "title": "Diseño UX/UI",
                                   "summary": "Resumen",
@@ -211,22 +309,28 @@ class CourseControllerTest {
                                   "nextStartDate": 2026,
                                   "modality": {}
                                 }
-                                """))
+                                """)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400));
 
-        Mockito.verify(courseService, Mockito.never()).createCourse(any(CourseRequestDTO.class));
+        Mockito.verify(courseService, Mockito.never()).createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
     }
 
     @Test
     @DisplayName("POST /api/v1/courses - Debería aceptar nextStartDate en formato ISO")
     void createCourse_ShouldAcceptNextStartDateInIsoFormat() throws Exception {
-        given(courseService.createCourse(any(CourseRequestDTO.class)))
+        given(courseService.createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        ))
                 .willReturn(new CourseDetailResponseDTO());
 
-        mockMvc.perform(post("/api/v1/courses")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+        performCreate("""
                                 {
                                   "title": "Diseño UX/UI",
                                   "summary": "Resumen",
@@ -238,12 +342,14 @@ class CourseControllerTest {
                                   "nextStartDate": "2026-11-07",
                                   "modality": {}
                                 }
-                                """))
+                                """)
                 .andExpect(status().isCreated());
 
-        Mockito.verify(courseService).createCourse(Mockito.argThat(request ->
-                java.time.LocalDate.of(2026, 11, 7).equals(request.getNextStartDate())
-        ));
+        Mockito.verify(courseService).createCourse(
+                Mockito.argThat(request -> java.time.LocalDate.of(2026, 11, 7).equals(request.getNextStartDate())),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
     }
 
     @Test
@@ -253,11 +359,42 @@ class CourseControllerTest {
         CourseRequestDTO requestDTO = validCourseRequestDTO();
         CourseDetailResponseDTO updatedResponse = new CourseDetailResponseDTO();
 
-        given(courseService.updateCourse(eq(courseId), any(CourseRequestDTO.class))).willReturn(updatedResponse);
+        given(courseService.updateCourse(
+                eq(courseId),
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        )).willReturn(updatedResponse);
 
-        mockMvc.perform(put("/api/v1/courses/{id}", courseId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(requestDTO)))
+        mockMvc.perform(multipart("/api/v1/courses/{id}", courseId)
+                        .part(coursePart(objectMapper.writeValueAsString(requestDTO)))
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("PUT /api/v1/courses/{id} - Acepta JSON aunque la parte llegue como octet-stream")
+    void updateCourse_ShouldAcceptOctetStreamCoursePart() throws Exception {
+        Long courseId = 1L;
+        given(courseService.updateCourse(
+                eq(courseId),
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        )).willReturn(new CourseDetailResponseDTO());
+
+        mockMvc.perform(multipart("/api/v1/courses/{id}", courseId)
+                        .part(coursePart(
+                                objectMapper.writeValueAsString(validCourseRequestDTO()),
+                                MediaType.APPLICATION_OCTET_STREAM_VALUE
+                        ))
+                        .with(request -> {
+                            request.setMethod("PUT");
+                            return request;
+                        }))
                 .andExpect(status().isOk());
     }
 

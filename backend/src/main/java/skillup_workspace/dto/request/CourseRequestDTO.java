@@ -53,15 +53,11 @@ public class CourseRequestDTO {
     @NotNull(message = "La modalidad es obligatoria")
     private ModalityRequestDTO modality;
 
-    private String imageUrl;
-
     @Schema(type = "string", format = "date", example = "2026-11-07")
     @JsonDeserialize(using = IsoLocalDateDeserializer.class)
     private LocalDate nextStartDate;
 
     private ScheduleRequestDTO schedule;
-
-    private String syllabusUrl;
 
     private List<String> learningGoals;
 

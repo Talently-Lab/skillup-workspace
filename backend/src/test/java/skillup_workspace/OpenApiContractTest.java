@@ -4,12 +4,17 @@ import io.swagger.v3.core.converter.ModelConverters;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.models.media.Schema;
+import jakarta.servlet.http.Part;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import skillup_workspace.controller.AuthController;
 import skillup_workspace.controller.CourseController;
 import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.request.LoginRequest;
 import skillup_workspace.dto.request.RegisterRequest;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -80,8 +85,12 @@ class OpenApiContractTest {
     @Test
     void courseMutationsDocumentAuthenticationAndAuthorizationResponses() throws NoSuchMethodException {
         List<Method> mutations = List.of(
-                CourseController.class.getMethod("createCourse", CourseRequestDTO.class),
-                CourseController.class.getMethod("updateCourse", Long.class, CourseRequestDTO.class),
+                CourseController.class.getMethod(
+                        "createCourse", Part.class, MultipartFile.class, MultipartFile.class
+                ),
+                CourseController.class.getMethod(
+                        "updateCourse", Long.class, Part.class, MultipartFile.class, MultipartFile.class
+                ),
                 CourseController.class.getMethod("deleteCourse", Long.class)
         );
 
@@ -91,5 +100,18 @@ class OpenApiContractTest {
                     .collect(Collectors.toSet());
             assertTrue(responseCodes.containsAll(Set.of("401", "403")), mutation.getName());
         }
+    }
+
+    @Test
+    void courseCreationAndUpdateConsumeMultipartFormData() throws NoSuchMethodException {
+        Method create = CourseController.class.getMethod(
+                "createCourse", Part.class, MultipartFile.class, MultipartFile.class
+        );
+        Method update = CourseController.class.getMethod(
+                "updateCourse", Long.class, Part.class, MultipartFile.class, MultipartFile.class
+        );
+
+        assertEquals(MediaType.MULTIPART_FORM_DATA_VALUE, create.getAnnotation(PostMapping.class).consumes()[0]);
+        assertEquals(MediaType.MULTIPART_FORM_DATA_VALUE, update.getAnnotation(PutMapping.class).consumes()[0]);
     }
 }

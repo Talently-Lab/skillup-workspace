@@ -37,7 +37,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
                 "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
                 "spring.jpa.show-sql=false",
                 "jwt.secret=MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
-                "jwt.expiration=86400000"
+                "jwt.expiration=86400000",
+                "r2.enabled=false"
         }
 )
 class CourseHardDeleteIntegrationTest {
@@ -350,8 +351,14 @@ class CourseHardDeleteIntegrationTest {
             request.header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
         }
         if (body != null) {
-            request.header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                    .method(method.name(), HttpRequest.BodyPublishers.ofString(body));
+            String boundary = "SkillUpBoundary7MA4YWxkTrZu0gW";
+            String multipartBody = "--" + boundary + "\r\n"
+                    + "Content-Disposition: form-data; name=\"course\"\r\n"
+                    + "Content-Type: application/json\r\n\r\n"
+                    + body + "\r\n"
+                    + "--" + boundary + "--\r\n";
+            request.header(HttpHeaders.CONTENT_TYPE, MediaType.MULTIPART_FORM_DATA_VALUE + "; boundary=" + boundary)
+                    .method(method.name(), HttpRequest.BodyPublishers.ofString(multipartBody));
         } else {
             request.method(method.name(), HttpRequest.BodyPublishers.noBody());
         }

@@ -12,6 +12,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.multipart.MultipartFile;
 import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
 import skillup_workspace.dto.response.CourseResponseDTO;
@@ -21,6 +25,12 @@ import skillup_workspace.mapper.CourseMapper;
 import skillup_workspace.repository.CourseRepository;
 import skillup_workspace.repository.EnrollmentRepository;
 import skillup_workspace.service.impl.CourseServiceImpl;
+import skillup_workspace.storage.R2StorageService;
+import skillup_workspace.storage.R2StorageService.StoredAsset;
+import skillup_workspace.storage.ImageConversionService;
+import skillup_workspace.storage.UploadPurpose;
+import skillup_workspace.exception.InvalidUploadException;
+import skillup_workspace.exception.R2StorageException;
 
 import java.util.List;
 import java.util.Optional;
@@ -42,6 +52,12 @@ class CourseServiceImplTest {
     @Mock
     private CourseMapper courseMapper;
 
+    @Mock
+    private R2StorageService r2StorageService;
+
+    @Mock
+    private ImageConversionService imageConversionService;
+
     @InjectMocks
     private CourseServiceImpl courseService;
 
@@ -56,6 +72,8 @@ class CourseServiceImplTest {
         mockCourse.setId(1L);
         mockCourse.setTitle("Curso de Java");
         mockCourse.setIsActive(true);
+        mockCourse.setImageUrl("https://assets.example.test/current-image.png");
+        mockCourse.setSyllabusUrl("https://assets.example.test/current-syllabus.pdf");
 
         requestDTO = new CourseRequestDTO();
         detailResponseDTO = new CourseDetailResponseDTO();
@@ -65,6 +83,9 @@ class CourseServiceImplTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     private void setupAuthentication(String role) {
@@ -264,10 +285,68 @@ class CourseServiceImplTest {
 
         CourseDetailResponseDTO result = courseService.createCourse(requestDTO);
 
-
         assertNotNull(result);
+        assertNull(mockCourse.getImageUrl());
+        assertNull(mockCourse.getSyllabusUrl());
         verify(courseMapper, times(1)).toEntity(requestDTO);
         verify(courseRepository, times(1)).save(mockCourse);
+    }
+
+    @Test
+    @DisplayName("createCourse - Debería asociar los archivos cargados por el backend")
+    void createCourseWithAssets_ShouldStoreReturnedUrls() {
+        StoredAsset imageAsset = new StoredAsset(
+                "courses/images/12345678-1234-1234-1234-123456789012.png",
+                "https://assets.example.test/courses/images/12345678-1234-1234-1234-123456789012.png"
+        );
+        StoredAsset syllabusAsset = new StoredAsset(
+                "courses/syllabi/12345678-1234-1234-1234-123456789012.pdf",
+                "https://assets.example.test/courses/syllabi/12345678-1234-1234-1234-123456789012.pdf"
+        );
+        MultipartFile image = new MockMultipartFile("image", "image.png", "image/png", new byte[]{1});
+        MultipartFile syllabus = new MockMultipartFile("syllabus", "course.pdf", "application/pdf", new byte[]{2});
+        ImageConversionService.ConvertedImage convertedImage = new ImageConversionService.ConvertedImage(
+                new byte[]{3, 4}
+        );
+        given(courseMapper.toEntity(requestDTO)).willReturn(mockCourse);
+        given(imageConversionService.convertToWebp(image)).willReturn(convertedImage);
+        given(r2StorageService.uploadWebp(convertedImage.content())).willReturn(imageAsset);
+        given(r2StorageService.upload(syllabus, UploadPurpose.COURSE_SYLLABUS)).willReturn(syllabusAsset);
+        given(courseRepository.save(mockCourse)).willReturn(mockCourse);
+        given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+        TransactionSynchronizationManager.initSynchronization();
+
+        CourseDetailResponseDTO result = courseService.createCourse(requestDTO, image, syllabus);
+
+        assertNotNull(result);
+        assertEquals(imageAsset.publicUrl(), mockCourse.getImageUrl());
+        assertEquals(syllabusAsset.publicUrl(), mockCourse.getSyllabusUrl());
+        verify(r2StorageService).uploadWebp(convertedImage.content());
+        verify(r2StorageService).upload(syllabus, UploadPurpose.COURSE_SYLLABUS);
+    }
+
+    @Test
+    @DisplayName("createCourse - Debería limpiar los archivos subidos cuando falla la persistencia")
+    void createCourseWhenSaveFails_ShouldDeleteUploadedAssets() {
+        StoredAsset imageAsset = new StoredAsset(
+                "courses/images/12345678-1234-1234-1234-123456789012.png",
+                "https://assets.example.test/courses/images/12345678-1234-1234-1234-123456789012.png"
+        );
+        MultipartFile image = new MockMultipartFile("image", "image.png", "image/png", new byte[]{1});
+        ImageConversionService.ConvertedImage convertedImage = new ImageConversionService.ConvertedImage(
+                new byte[]{3, 4}
+        );
+        given(courseMapper.toEntity(requestDTO)).willReturn(mockCourse);
+        given(imageConversionService.convertToWebp(image)).willReturn(convertedImage);
+        given(r2StorageService.uploadWebp(convertedImage.content())).willReturn(imageAsset);
+        given(courseRepository.save(mockCourse)).willThrow(new IllegalStateException("database failure"));
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> courseService.createCourse(requestDTO, image, null)
+        );
+
+        verify(r2StorageService).deleteAsset(imageAsset);
     }
 
 
@@ -287,8 +366,137 @@ class CourseServiceImplTest {
             CourseDetailResponseDTO result = courseService.updateCourse(1L, requestDTO);
 
             assertNotNull(result);
+            assertEquals("https://assets.example.test/current-image.png", mockCourse.getImageUrl());
+            assertEquals("https://assets.example.test/current-syllabus.pdf", mockCourse.getSyllabusUrl());
             verify(courseMapper, times(1)).updateEntityFromDto(requestDTO, mockCourse);
             verify(courseRepository, times(1)).save(mockCourse);
+        }
+
+        @Test
+        @DisplayName("updateCourse - Debería eliminar el archivo anterior solo después del commit y si no se comparte")
+        void updateCourseWithReplacement_ShouldDeleteOldAssetAfterCommitWhenUnused() {
+            StoredAsset replacement = new StoredAsset(
+                    "courses/images/12345678-1234-1234-1234-123456789012.png",
+                    "https://assets.example.test/courses/images/12345678-1234-1234-1234-123456789012.png"
+            );
+            MultipartFile image = new MockMultipartFile("image", "new.png", "image/png", new byte[]{1});
+            ImageConversionService.ConvertedImage convertedImage = new ImageConversionService.ConvertedImage(
+                    new byte[]{3, 4}
+            );
+            given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
+            doNothing().when(courseMapper).updateEntityFromDto(requestDTO, mockCourse);
+            given(imageConversionService.convertToWebp(image)).willReturn(convertedImage);
+            given(r2StorageService.uploadWebp(convertedImage.content())).willReturn(replacement);
+            given(courseRepository.save(mockCourse)).willReturn(mockCourse);
+            given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+            TransactionSynchronizationManager.initSynchronization();
+
+            courseService.updateCourse(1L, requestDTO, image, null);
+
+            verify(r2StorageService, never()).deleteManagedAsset("https://assets.example.test/current-image.png");
+            TransactionSynchronization synchronization =
+                    TransactionSynchronizationManager.getSynchronizations().get(0);
+            synchronization.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+
+            verify(courseRepository).existsByImageUrl("https://assets.example.test/current-image.png");
+            verify(courseRepository).existsBySyllabusUrl("https://assets.example.test/current-image.png");
+            verify(r2StorageService).deleteManagedAsset("https://assets.example.test/current-image.png");
+        }
+
+        @Test
+        @DisplayName("updateCourse - Debería conservar el archivo antiguo cuando otro curso lo utiliza")
+        void updateCourseWithReplacement_ShouldKeepOldAssetWhenShared() {
+            StoredAsset replacement = new StoredAsset(
+                    "courses/images/12345678-1234-1234-1234-123456789012.png",
+                    "https://assets.example.test/courses/images/12345678-1234-1234-1234-123456789012.png"
+            );
+            MultipartFile image = new MockMultipartFile("image", "new.png", "image/png", new byte[]{1});
+            ImageConversionService.ConvertedImage convertedImage = new ImageConversionService.ConvertedImage(
+                    new byte[]{3, 4}
+            );
+            given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
+            doNothing().when(courseMapper).updateEntityFromDto(requestDTO, mockCourse);
+            given(imageConversionService.convertToWebp(image)).willReturn(convertedImage);
+            given(r2StorageService.uploadWebp(convertedImage.content())).willReturn(replacement);
+            given(courseRepository.save(mockCourse)).willReturn(mockCourse);
+            given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+            given(courseRepository.existsByImageUrl("https://assets.example.test/current-image.png"))
+                    .willReturn(true);
+            TransactionSynchronizationManager.initSynchronization();
+
+            courseService.updateCourse(1L, requestDTO, image, null);
+            TransactionSynchronizationManager.getSynchronizations().get(0)
+                    .afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+
+            verify(r2StorageService, never()).deleteManagedAsset("https://assets.example.test/current-image.png");
+        }
+
+        @Test
+        @DisplayName("updateCourse - Debería eliminar el archivo nuevo si la transacción termina en rollback")
+        void updateCourseWithReplacement_ShouldCleanupNewAssetAfterRollback() {
+            StoredAsset replacement = new StoredAsset(
+                    "courses/images/12345678-1234-1234-1234-123456789012.png",
+                    "https://assets.example.test/courses/images/12345678-1234-1234-1234-123456789012.png"
+            );
+            MultipartFile image = new MockMultipartFile("image", "new.png", "image/png", new byte[]{1});
+            ImageConversionService.ConvertedImage convertedImage = new ImageConversionService.ConvertedImage(
+                    new byte[]{3, 4}
+            );
+            given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
+            doNothing().when(courseMapper).updateEntityFromDto(requestDTO, mockCourse);
+            given(imageConversionService.convertToWebp(image)).willReturn(convertedImage);
+            given(r2StorageService.uploadWebp(convertedImage.content())).willReturn(replacement);
+            given(courseRepository.save(mockCourse)).willReturn(mockCourse);
+            given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+            TransactionSynchronizationManager.initSynchronization();
+
+            courseService.updateCourse(1L, requestDTO, image, null);
+            TransactionSynchronizationManager.getSynchronizations().get(0)
+                    .afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+
+            verify(r2StorageService).deleteAsset(replacement);
+            verify(r2StorageService, never()).deleteManagedAsset("https://assets.example.test/current-image.png");
+        }
+
+        @Test
+        @DisplayName("updateCourse - Debería conservar la imagen anterior si falla la conversión")
+        void updateCourseWhenImageConversionFails_ShouldKeepExistingImage() {
+            MultipartFile image = new MockMultipartFile("image", "bad.png", "image/png", new byte[]{1});
+            given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
+            doNothing().when(courseMapper).updateEntityFromDto(requestDTO, mockCourse);
+            given(imageConversionService.convertToWebp(image))
+                    .willThrow(new InvalidUploadException("Imagen inválida"));
+
+            assertThrows(
+                    InvalidUploadException.class,
+                    () -> courseService.updateCourse(1L, requestDTO, image, null)
+            );
+
+            assertEquals("https://assets.example.test/current-image.png", mockCourse.getImageUrl());
+            verify(r2StorageService, never()).uploadWebp(any());
+            verify(courseRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("updateCourse - Debería conservar la imagen anterior si falla la carga en R2")
+        void updateCourseWhenR2UploadFails_ShouldKeepExistingImage() {
+            MultipartFile image = new MockMultipartFile("image", "new.png", "image/png", new byte[]{1});
+            ImageConversionService.ConvertedImage convertedImage = new ImageConversionService.ConvertedImage(
+                    new byte[]{3, 4}
+            );
+            given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
+            doNothing().when(courseMapper).updateEntityFromDto(requestDTO, mockCourse);
+            given(imageConversionService.convertToWebp(image)).willReturn(convertedImage);
+            given(r2StorageService.uploadWebp(convertedImage.content()))
+                    .willThrow(new R2StorageException("R2 no disponible"));
+
+            assertThrows(
+                    R2StorageException.class,
+                    () -> courseService.updateCourse(1L, requestDTO, image, null)
+            );
+
+            assertEquals("https://assets.example.test/current-image.png", mockCourse.getImageUrl());
+            verify(courseRepository, never()).save(any());
         }
 
         @Test

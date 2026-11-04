@@ -1,5 +1,7 @@
 package skillup_workspace.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -9,17 +11,25 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
+import jakarta.servlet.http.Part;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.*;
 import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
 import skillup_workspace.dto.response.CourseResponseDTO;
 import skillup_workspace.service.CourseService;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/v1/courses")
@@ -28,6 +38,8 @@ import java.util.List;
 public class CourseController {
 
     private final CourseService courseService;
+    private final ObjectMapper objectMapper;
+    private final Validator validator;
 
     @Operation(
             summary = "Obtener lista de cursos",
@@ -70,7 +82,13 @@ public class CourseController {
 
     @Operation(
             summary = "Crear un nuevo curso",
-            description = "Registra un nuevo curso en el sistema.",
+            description = """
+                    Registra un curso mediante multipart/form-data. La parte `course` contiene JSON
+                    que se deserializa independientemente del Content-Type asignado a esa parte.
+                    con los datos del curso; `image` (imagen compatible con ImageIO) y `syllabus`
+                    (PDF) son opcionales. Las imágenes se convierten a WebP antes de guardarse en R2.
+                    Los enlaces de imagen y programa son administrados por el servidor.
+                    """,
             security = @SecurityRequirement(name = "bearerAuth")
     )
     @ApiResponses(value = {
@@ -93,17 +111,43 @@ public class CourseController {
                     responseCode = "403",
                     description = "Token válido, pero el usuario no tiene rol ADMIN",
                     content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "413",
+                    description = "El archivo supera el límite configurado",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "503",
+                    description = "Almacenamiento R2 no disponible",
+                    content = @Content
             )
     })
-    @PostMapping
-    public ResponseEntity<CourseDetailResponseDTO> createCourse(@Valid @RequestBody CourseRequestDTO requestDTO) {
-        CourseDetailResponseDTO createdCourse = courseService.createCourse(requestDTO);
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<CourseDetailResponseDTO> createCourse(
+            @Parameter(
+                    description = "Datos del curso en JSON",
+                    content = @Content(schema = @Schema(implementation = CourseRequestDTO.class))
+            )
+            @RequestPart("course") Part coursePart,
+            @Parameter(description = "Imagen compatible con ImageIO (opcional); se almacena como WebP")
+            @RequestPart(value = "image", required = false) MultipartFile image,
+            @Parameter(description = "Programa PDF (opcional)")
+            @RequestPart(value = "syllabus", required = false) MultipartFile syllabus) {
+        CourseRequestDTO requestDTO = parseCoursePart(coursePart);
+        CourseDetailResponseDTO createdCourse = courseService.createCourse(requestDTO, image, syllabus);
         return ResponseEntity.status(HttpStatus.CREATED).body(createdCourse);
     }
 
     @Operation(
             summary = "Actualizar un curso existente",
-            description = "Actualiza los datos de un curso según su ID.",
+            description = """
+                    Actualiza un curso mediante multipart/form-data. La parte `course` contiene JSON
+                    que se deserializa independientemente del Content-Type asignado a esa parte.
+                    `image` y `syllabus` son opcionales. La imagen se convierte a WebP.
+                    Si se omite un archivo, se conserva el recurso actual. Los enlaces de imagen y programa
+                    son administrados por el servidor.
+                    """,
             security = @SecurityRequirement(name = "bearerAuth")
     )
     @ApiResponses(value = {
@@ -131,14 +175,57 @@ public class CourseController {
                     responseCode = "403",
                     description = "Token válido, pero el usuario no tiene rol ADMIN",
                     content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "413",
+                    description = "El archivo supera el límite configurado",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "503",
+                    description = "Almacenamiento R2 no disponible",
+                    content = @Content
             )
     })
-    @PutMapping("/{id}")
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<CourseDetailResponseDTO> updateCourse(
             @Parameter(description = "ID del curso a actualizar", example = "1")
             @PathVariable Long id,
-            @Valid @RequestBody CourseRequestDTO requestDTO) {
-        return ResponseEntity.ok(courseService.updateCourse(id, requestDTO));
+            @Parameter(
+                    description = "Datos del curso en JSON",
+                    content = @Content(schema = @Schema(implementation = CourseRequestDTO.class))
+            )
+            @RequestPart("course") Part coursePart,
+            @Parameter(description = "Imagen compatible con ImageIO (opcional); se almacena como WebP")
+            @RequestPart(value = "image", required = false) MultipartFile image,
+            @Parameter(description = "Programa PDF (opcional)")
+            @RequestPart(value = "syllabus", required = false) MultipartFile syllabus) {
+        CourseRequestDTO requestDTO = parseCoursePart(coursePart);
+        return ResponseEntity.ok(courseService.updateCourse(id, requestDTO, image, syllabus));
+    }
+
+    private CourseRequestDTO parseCoursePart(Part coursePart) {
+        CourseRequestDTO requestDTO;
+        try {
+            requestDTO = objectMapper.readValue(coursePart.getInputStream(), CourseRequestDTO.class);
+        } catch (JsonProcessingException ex) {
+            throw new HttpMessageNotReadableException("La parte 'course' debe contener JSON válido.", ex);
+        } catch (IOException ex) {
+            throw new HttpMessageNotReadableException("No se pudo leer la parte 'course'.", ex);
+        }
+
+        if (requestDTO == null) {
+            throw new HttpMessageNotReadableException(
+                    "La parte 'course' no puede ser null.",
+                    new IllegalArgumentException("El JSON de curso no puede ser null.")
+            );
+        }
+
+        Set<ConstraintViolation<CourseRequestDTO>> violations = validator.validate(requestDTO);
+        if (!violations.isEmpty()) {
+            throw new ConstraintViolationException(violations);
+        }
+        return requestDTO;
     }
 
     @Operation(
