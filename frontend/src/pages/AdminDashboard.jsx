@@ -10,6 +10,7 @@ import CourseFormModal from '../components/admin/CourseFormModal'
 import AdminDashboardSummary from '../components/admin/AdminDashboardSummary'
 import {
   AdminSidebar,
+  CourseEnrollmentsModal,
   CourseActions,
   CourseStatusSelector,
   CourseThumbnail,
@@ -102,6 +103,7 @@ export default function AdminDashboard() {
   const [courseToDelete, setCourseToDelete] = useState(null)
   const [deleteError, setDeleteError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
+  const [courseEnrollmentsModal, setCourseEnrollmentsModal] = useState(null)
 
   useEffect(() => {
     try {
@@ -316,6 +318,27 @@ export default function AdminDashboard() {
     } catch (error) {
       setModalCourse(null)
       setDetailError(`No se pudo cargar el curso para editarlo: ${getErrorMessage(error)}`)
+    }
+  }
+
+  const openCourseEnrollments = async (course) => {
+    setCourseEnrollmentsModal({ course, enrollments: [], loading: true, error: '' })
+    try {
+      const { data } = await api.get(`/enrollments/courses/${course.id}`)
+      if (!Array.isArray(data)) {
+        throw new Error('La respuesta del servidor no tiene el formato esperado.')
+      }
+      setCourseEnrollmentsModal((current) =>
+        current?.course.id === course.id
+          ? { ...current, enrollments: data, loading: false }
+          : current,
+      )
+    } catch (error) {
+      setCourseEnrollmentsModal((current) =>
+        current?.course.id === course.id
+          ? { ...current, loading: false, error: getErrorMessage(error) }
+          : current,
+      )
     }
   }
 
@@ -566,6 +589,7 @@ export default function AdminDashboard() {
                                 setCourseToDelete(selectedCourse)
                               }}
                               onEdit={openEditModal}
+                              onViewEnrollments={openCourseEnrollments}
                             />
                           </td>
                         </tr>
@@ -623,6 +647,7 @@ export default function AdminDashboard() {
                             setCourseToDelete(selectedCourse)
                           }}
                           onEdit={openEditModal}
+                          onViewEnrollments={openCourseEnrollments}
                         />
                       </div>
                     </article>
@@ -822,6 +847,15 @@ export default function AdminDashboard() {
             </div>
           </section>
         </div>
+      )}
+      {courseEnrollmentsModal && (
+        <CourseEnrollmentsModal
+          course={courseEnrollmentsModal.course}
+          enrollments={courseEnrollmentsModal.enrollments}
+          error={courseEnrollmentsModal.error}
+          loading={courseEnrollmentsModal.loading}
+          onClose={() => setCourseEnrollmentsModal(null)}
+        />
       )}
     </>
   )

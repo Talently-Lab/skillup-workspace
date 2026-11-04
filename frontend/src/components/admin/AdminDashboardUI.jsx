@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, Image as ImageIcon, Menu, Pencil, Trash2, X } from 'lucide-react'
+import { CalendarDays, ChevronDown, Image as ImageIcon, Mail, Menu, Pencil, Trash2, UsersRound, X } from 'lucide-react'
 import { ADMIN_SECTIONS, COURSE_STATUSES } from './adminDashboardConstants'
 
 const COURSE_STATUS_STYLES = {
@@ -116,9 +116,18 @@ export function CourseThumbnail({ course }) {
   )
 }
 
-export function CourseActions({ course, deleting, onEdit, onDelete }) {
+export function CourseActions({ course, deleting, onEdit, onDelete, onViewEnrollments }) {
   return (
     <div className="flex items-center justify-end gap-1.5">
+      <button
+        aria-label={`Ver inscritos en ${course.title}`}
+        className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border text-slate-500 transition hover:border-primary/30 hover:bg-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        onClick={() => onViewEnrollments(course)}
+        title="Ver inscritos"
+        type="button"
+      >
+        <UsersRound aria-hidden="true" size={17} />
+      </button>
       <button
         aria-label={`Editar ${course.title}`}
         className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border text-slate-500 transition hover:border-primary/30 hover:bg-secondary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
@@ -138,6 +147,94 @@ export function CourseActions({ course, deleting, onEdit, onDelete }) {
       >
         <Trash2 aria-hidden="true" size={16} />
       </button>
+    </div>
+  )
+}
+
+export function CourseEnrollmentsModal({ course, enrollments, loading, error, onClose }) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+      role="presentation"
+    >
+      <section
+        aria-labelledby="course-enrollments-title"
+        aria-modal="true"
+        className="max-h-[min(85vh,720px)] w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+        role="dialog"
+      >
+        <header className="flex items-start gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-bold text-ink" id="course-enrollments-title">
+              Alumnos inscritos
+            </h2>
+            <p className="mt-1 truncate text-sm text-muted" title={course.title}>
+              {course.title}
+            </p>
+          </div>
+          <button
+            aria-label="Cerrar lista de inscritos"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-slate-100 hover:text-ink"
+            onClick={onClose}
+            type="button"
+          >
+            <X aria-hidden="true" size={18} />
+          </button>
+        </header>
+
+        <div aria-live="polite" className="max-h-[calc(min(85vh,720px)-76px)] overflow-y-auto p-4 sm:p-6">
+          {loading ? (
+            <p className="py-10 text-center text-sm text-muted" role="status">
+              Cargando alumnos inscritos...
+            </p>
+          ) : error ? (
+            <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-danger" role="alert">
+              No se pudo cargar la lista: {error}
+            </p>
+          ) : enrollments.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted">
+              Todavía no hay alumnos inscritos en este curso.
+            </p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {enrollments.map((enrollment) => {
+                const name = [enrollment.firstName, enrollment.lastName].filter(Boolean).join(' ')
+                const enrollmentDate = enrollment.enrolledAt
+                  ? new Intl.DateTimeFormat('es', {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  }).format(new Date(enrollment.enrolledAt))
+                  : null
+                return (
+                  <li className="flex flex-col gap-2 py-4 first:pt-0 sm:flex-row sm:items-center sm:justify-between" key={enrollment.enrollmentId}>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-ink">{name || 'Alumno'}</p>
+                      <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted">
+                        <Mail aria-hidden="true" className="shrink-0" size={13} />
+                        <span className="truncate">{enrollment.email}</span>
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3 text-xs text-muted">
+                      {enrollmentDate && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <CalendarDays aria-hidden="true" size={13} />
+                          {enrollmentDate}
+                        </span>
+                      )}
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
+                        {enrollment.status || 'Inscrito'}
+                      </span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      </section>
     </div>
   )
 }
