@@ -11,6 +11,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import skillup_workspace.dto.request.EnrollmentRequestDTO;
 import skillup_workspace.dto.response.EnrollmentResponseDTO;
+import skillup_workspace.dto.response.StudentEnrollmentResponseDTO;
 import skillup_workspace.entity.Course;
 import skillup_workspace.entity.Enrollment;
 import skillup_workspace.entity.User;
@@ -20,6 +21,7 @@ import skillup_workspace.repository.UserRepository;
 import skillup_workspace.service.impl.EnrollmentServiceImpl;
 
 import java.util.Optional;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -99,5 +101,25 @@ class EnrollmentServiceImplTest {
 
         Exception exception = assertThrows(IllegalStateException.class, () -> enrollmentService.enrollUser(requestDTO));
         assertEquals("El usuario ya se encuentra inscripto en este curso.", exception.getMessage());
+    }
+
+    @Test
+    void getCurrentUserEnrollments_ReturnsCoursesForAuthenticatedStudent() {
+        Enrollment enrollment = new Enrollment();
+        enrollment.setId(100L);
+        enrollment.setUser(mockUser);
+        enrollment.setCourse(mockCourse);
+        enrollment.setStatus("ACTIVE");
+        when(userRepository.findByEmail("alumno@ejemplo.com")).thenReturn(Optional.of(mockUser));
+        when(enrollmentRepository.findByUserWithCourseOrderByEnrolledAtDesc(mockUser))
+                .thenReturn(List.of(enrollment));
+
+        List<StudentEnrollmentResponseDTO> result = enrollmentService.getCurrentUserEnrollments();
+
+        assertEquals(1, result.size());
+        assertEquals(100L, result.get(0).getId());
+        assertEquals(1L, result.get(0).getCourseId());
+        assertEquals("Curso de Prueba", result.get(0).getCourseTitle());
+        assertEquals("ACTIVE", result.get(0).getStatus());
     }
 }

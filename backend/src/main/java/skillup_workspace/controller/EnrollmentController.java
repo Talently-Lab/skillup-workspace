@@ -11,13 +11,17 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import skillup_workspace.dto.request.EnrollmentRequestDTO;
 import skillup_workspace.dto.response.EnrollmentResponseDTO;
+import skillup_workspace.dto.response.StudentEnrollmentResponseDTO;
 import skillup_workspace.service.EnrollmentService;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/enrollments")
@@ -26,6 +30,17 @@ import skillup_workspace.service.EnrollmentService;
 public class EnrollmentController {
 
     private final EnrollmentService enrollmentService;
+
+    @Operation(
+            summary = "Consultar mis cursos",
+            description = "Devuelve las inscripciones del alumno autenticado con la información de cada curso.",
+            security = @SecurityRequirement(name = "bearerAuth")
+    )
+    @ApiResponse(responseCode = "200", description = "Inscripciones del alumno")
+    @GetMapping
+    public ResponseEntity<List<StudentEnrollmentResponseDTO>> getCurrentUserEnrollments() {
+        return ResponseEntity.ok(enrollmentService.getCurrentUserEnrollments());
+    }
 
     @Operation(
             summary = "Inscribirse a un curso",

@@ -14,7 +14,10 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 import skillup_workspace.controller.AdminUserController;
 import skillup_workspace.controller.CourseController;
+import skillup_workspace.controller.CourseFavoriteController;
+import skillup_workspace.controller.EnrollmentController;
 import skillup_workspace.dto.response.AdminUserResponseDTO;
+import skillup_workspace.dto.response.CourseFavoriteResponseDTO;
 import skillup_workspace.entity.User;
 import skillup_workspace.exception.GlobalExceptionHandler;
 import skillup_workspace.exception.ResourceNotFoundException;
@@ -23,6 +26,8 @@ import skillup_workspace.security.JwtAuthenticationFilter;
 import skillup_workspace.security.JwtService;
 import skillup_workspace.service.AdminUserService;
 import skillup_workspace.service.CourseService;
+import skillup_workspace.service.CourseFavoriteService;
+import skillup_workspace.service.EnrollmentService;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -58,6 +63,12 @@ class SecurityAuthorizationHttpTest {
 
     @MockBean
     private CourseService courseService;
+
+    @MockBean
+    private CourseFavoriteService courseFavoriteService;
+
+    @MockBean
+    private EnrollmentService enrollmentService;
 
     @MockBean
     private AdminUserService adminUserService;
@@ -99,6 +110,78 @@ class SecurityAuthorizationHttpTest {
 
         assertEquals(200, response.statusCode());
         assertTrue(response.body().contains("\"email\":\"ana@example.com\""));
+    }
+
+    @Test
+    void getFavoriteWithoutTokenReturns401() throws Exception {
+        HttpResponse<String> response = favoriteRequest("GET", null);
+
+        assertEquals(401, response.statusCode());
+        verifyNoInteractions(courseFavoriteService);
+    }
+
+    @Test
+    void getFavoriteWithAdminTokenReturns403() throws Exception {
+        User admin = user("admin@example.com", "ADMIN");
+        given(jwtService.extractUsername("admin-token")).willReturn(admin.getEmail());
+        given(userRepository.findByEmail(admin.getEmail())).willReturn(Optional.of(admin));
+        given(jwtService.isTokenValid("admin-token", admin)).willReturn(true);
+
+        HttpResponse<String> response = favoriteRequest("GET", "admin-token");
+
+        assertEquals(403, response.statusCode());
+        verifyNoInteractions(courseFavoriteService);
+    }
+
+    @Test
+    void getFavoriteWithStudentTokenReturnsStatus() throws Exception {
+        User student = user("student@example.com", "ALUMNO");
+        given(jwtService.extractUsername("student-token")).willReturn(student.getEmail());
+        given(userRepository.findByEmail(student.getEmail())).willReturn(Optional.of(student));
+        given(jwtService.isTokenValid("student-token", student)).willReturn(true);
+        given(courseFavoriteService.getFavoriteStatus(2L))
+                .willReturn(new CourseFavoriteResponseDTO(2L, true));
+
+        HttpResponse<String> response = favoriteRequest("GET", "student-token");
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"favorited\":true"));
+    }
+
+    @Test
+    void getEnrollmentsWithoutTokenReturns401() throws Exception {
+        HttpResponse<String> response = enrollmentsRequest(null);
+
+        assertEquals(401, response.statusCode());
+        verifyNoInteractions(enrollmentService);
+    }
+
+    @Test
+    void getEnrollmentsWithAdminTokenReturns403() throws Exception {
+        User admin = user("admin@example.com", "ADMIN");
+        given(jwtService.extractUsername("admin-token")).willReturn(admin.getEmail());
+        given(userRepository.findByEmail(admin.getEmail())).willReturn(Optional.of(admin));
+        given(jwtService.isTokenValid("admin-token", admin)).willReturn(true);
+
+        HttpResponse<String> response = enrollmentsRequest("admin-token");
+
+        assertEquals(403, response.statusCode());
+        verifyNoInteractions(enrollmentService);
+    }
+
+    @Test
+    void getEnrollmentsWithStudentTokenReturnsEnrollments() throws Exception {
+        User student = user("student@example.com", "ALUMNO");
+        given(jwtService.extractUsername("student-token")).willReturn(student.getEmail());
+        given(userRepository.findByEmail(student.getEmail())).willReturn(Optional.of(student));
+        given(jwtService.isTokenValid("student-token", student)).willReturn(true);
+        given(enrollmentService.getCurrentUserEnrollments()).willReturn(List.of());
+
+        HttpResponse<String> response = enrollmentsRequest("student-token");
+
+        assertEquals(200, response.statusCode());
+        assertEquals("[]", response.body());
+        verify(enrollmentService).getCurrentUserEnrollments();
     }
 
     @Test
@@ -207,6 +290,26 @@ class SecurityAuthorizationHttpTest {
         return HTTP_CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    private HttpResponse<String> favoriteRequest(String method, String token) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/courses/2/favorite"))
+                .method(method, HttpRequest.BodyPublishers.noBody());
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return HTTP_CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> enrollmentsRequest(String token) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/enrollments"))
+                .GET();
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return HTTP_CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
     private HttpResponse<String> getUsers(String token) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + "/api/v1/admin/users"))
@@ -235,6 +338,8 @@ class SecurityAuthorizationHttpTest {
             JwtAuthenticationFilter.class,
             AdminUserController.class,
             CourseController.class,
+            CourseFavoriteController.class,
+            EnrollmentController.class,
             GlobalExceptionHandler.class
     })
     static class HttpTestApplication {
