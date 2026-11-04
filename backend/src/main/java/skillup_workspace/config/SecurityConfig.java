@@ -103,6 +103,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/users/**").hasAuthority("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/v1/admin/dashboard-stats").hasAuthority("ADMIN")
 
+                        .requestMatchers("/api/v1/courses/*/favorite").hasAuthority("ALUMNO")
+
                         .requestMatchers(HttpMethod.GET, "/api/v1/courses/**").permitAll()
 
                         .requestMatchers(HttpMethod.POST, "/api/v1/courses/**").hasAuthority("ADMIN")

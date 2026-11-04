@@ -21,6 +21,7 @@ public interface CourseMapper {
     @Mapping(target = "syllabusUrl", ignore = true)
     Course toEntity(CourseRequestDTO dto);
 
+    @Mapping(target = "activeEnrollmentCount", ignore = true)
     CourseResponseDTO toResponseDTO(Course course);
 
     List<CourseResponseDTO> toResponseDTOList(List<Course> courses);

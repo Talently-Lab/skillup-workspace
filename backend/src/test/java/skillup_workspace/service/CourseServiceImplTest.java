@@ -24,7 +24,9 @@ import skillup_workspace.entity.CourseStatus;
 import skillup_workspace.exception.ResourceNotFoundException;
 import skillup_workspace.mapper.CourseMapper;
 import skillup_workspace.repository.CourseRepository;
+import skillup_workspace.repository.CourseFavoriteRepository;
 import skillup_workspace.repository.EnrollmentRepository;
+import skillup_workspace.repository.EnrollmentRepository.CourseEnrollmentCount;
 import skillup_workspace.service.impl.CourseServiceImpl;
 import skillup_workspace.storage.R2StorageService;
 import skillup_workspace.storage.R2StorageService.StoredAsset;
@@ -33,6 +35,7 @@ import skillup_workspace.storage.UploadPurpose;
 import skillup_workspace.exception.InvalidUploadException;
 import skillup_workspace.exception.R2StorageException;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -46,6 +49,9 @@ class CourseServiceImplTest {
 
     @Mock
     private CourseRepository courseRepository;
+
+    @Mock
+    private CourseFavoriteRepository courseFavoriteRepository;
 
     @Mock
     private EnrollmentRepository enrollmentRepository;
@@ -121,6 +127,9 @@ class CourseServiceImplTest {
         @DisplayName("Debería activar cursos publicados")
         void whenPublishedShouldSetCourseActive() {
             mockCourse.setIsActive(false);
+            mockCourse.setStatus(CourseStatus.ARCHIVADO);
+            mockCourse.setCreatedAt(LocalDateTime.now().minusDays(1));
+            LocalDateTime previousCreatedAt = mockCourse.getCreatedAt();
             given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
             given(courseRepository.save(mockCourse)).willReturn(mockCourse);
             given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
@@ -129,7 +138,22 @@ class CourseServiceImplTest {
 
             assertEquals(CourseStatus.PUBLICADO, mockCourse.getStatus());
             assertTrue(mockCourse.getIsActive());
+            assertTrue(mockCourse.getCreatedAt().isAfter(previousCreatedAt));
             verify(courseRepository).save(mockCourse);
+        }
+
+        @Test
+        @DisplayName("No debería actualizar createdAt si el curso ya estaba publicado")
+        void whenAlreadyPublishedShouldPreserveCreatedAt() {
+            LocalDateTime originalCreatedAt = LocalDateTime.now().minusDays(1);
+            mockCourse.setCreatedAt(originalCreatedAt);
+            given(courseRepository.findById(1L)).willReturn(Optional.of(mockCourse));
+            given(courseRepository.save(mockCourse)).willReturn(mockCourse);
+            given(courseMapper.toDetailResponseDTO(mockCourse)).willReturn(detailResponseDTO);
+
+            courseService.updateCourseStatus(1L, CourseStatus.PUBLICADO);
+
+            assertEquals(originalCreatedAt, mockCourse.getCreatedAt());
         }
 
         @Test
@@ -177,6 +201,23 @@ class CourseServiceImplTest {
             assertNotNull(result);
             assertEquals(1, result.size());
             verify(courseRepository, times(1)).findAllCoursesWithFilter(true);
+        }
+
+        @Test
+        @DisplayName("getAllCourses - Devuelve el número de inscripciones activas por curso")
+        void getAllCourses_ShouldAddActiveEnrollmentCountToResponse() {
+            setupAuthentication("ROLE_ALUMNO");
+            responseDTO.setId(1L);
+            CourseEnrollmentCount count = mock(CourseEnrollmentCount.class);
+            given(count.getCourseId()).willReturn(1L);
+            given(count.getActiveEnrollmentCount()).willReturn(7L);
+            given(courseRepository.findAllCoursesWithFilter(false)).willReturn(List.of(mockCourse));
+            given(courseMapper.toResponseDTOList(anyList())).willReturn(List.of(responseDTO));
+            given(enrollmentRepository.findActiveEnrollmentCountsByCourse()).willReturn(List.of(count));
+
+            List<CourseResponseDTO> result = courseService.getAllCourses();
+
+            assertEquals(7L, result.get(0).getActiveEnrollmentCount());
         }
 
         @Test
@@ -607,6 +648,7 @@ class CourseServiceImplTest {
             courseService.deleteCourse(1L);
 
             assertTrue(mockCourse.getIsActive());
+            verify(courseFavoriteRepository).deleteByCourse_Id(1L);
             verify(courseRepository).delete(mockCourse);
             verify(courseRepository, never()).save(any());
         }

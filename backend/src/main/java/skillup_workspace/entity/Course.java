@@ -5,7 +5,6 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import skillup_workspace.dto.request.ContentModuleRequestDTO;
@@ -63,8 +62,7 @@ public class Course {
     @Column(name = "status", length = 20)
     private CourseStatus status = CourseStatus.PUBLICADO;
 
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
+    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
     @JdbcTypeCode(SqlTypes.JSON)
@@ -92,5 +90,12 @@ public class Course {
             return status;
         }
         return Boolean.TRUE.equals(isActive) ? CourseStatus.PUBLICADO : CourseStatus.ARCHIVADO;
+    }
+
+    @PrePersist
+    public void initializeCreatedAt() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
     }
 }

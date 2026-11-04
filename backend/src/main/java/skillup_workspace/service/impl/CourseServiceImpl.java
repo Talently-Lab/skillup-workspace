@@ -18,6 +18,7 @@ import skillup_workspace.entity.CourseStatus;
 import skillup_workspace.exception.ResourceNotFoundException;
 import skillup_workspace.mapper.CourseMapper;
 import skillup_workspace.repository.CourseRepository;
+import skillup_workspace.repository.CourseFavoriteRepository;
 import skillup_workspace.repository.EnrollmentRepository;
 import skillup_workspace.service.CourseService;
 import skillup_workspace.storage.R2StorageService;
@@ -25,8 +26,11 @@ import skillup_workspace.storage.R2StorageService.StoredAsset;
 import skillup_workspace.storage.ImageConversionService;
 import skillup_workspace.storage.UploadPurpose;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 @Service
@@ -36,6 +40,7 @@ public class CourseServiceImpl implements CourseService {
     private static final Logger log = LoggerFactory.getLogger(CourseServiceImpl.class);
 
     private final CourseRepository courseRepository;
+    private final CourseFavoriteRepository courseFavoriteRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final CourseMapper courseMapper;
     private final R2StorageService r2StorageService;
@@ -46,7 +51,15 @@ public class CourseServiceImpl implements CourseService {
     public List<CourseResponseDTO> getAllCourses() {
         boolean isAdmin = checkIsAdmin();
         List<Course> courses = courseRepository.findAllCoursesWithFilter(isAdmin);
-        return courseMapper.toResponseDTOList(courses);
+        List<CourseResponseDTO> response = courseMapper.toResponseDTOList(courses);
+        Map<Long, Long> activeEnrollmentCounts = new HashMap<>();
+        enrollmentRepository.findActiveEnrollmentCountsByCourse().forEach(count ->
+                activeEnrollmentCounts.put(count.getCourseId(), count.getActiveEnrollmentCount())
+        );
+        response.forEach(course ->
+                course.setActiveEnrollmentCount(activeEnrollmentCounts.getOrDefault(course.getId(), 0L))
+        );
+        return response;
     }
 
     @Override
@@ -120,6 +133,9 @@ public class CourseServiceImpl implements CourseService {
         Course course = courseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Curso no encontrado con el id: " + id));
 
+        if (status == CourseStatus.PUBLICADO && course.getStatus() != CourseStatus.PUBLICADO) {
+            course.setCreatedAt(LocalDateTime.now());
+        }
         course.setStatus(status);
         course.setIsActive(status == CourseStatus.PUBLICADO);
         return courseMapper.toDetailResponseDTO(courseRepository.save(course));
@@ -186,6 +202,7 @@ public class CourseServiceImpl implements CourseService {
             );
         }
 
+        courseFavoriteRepository.deleteByCourse_Id(id);
         courseRepository.delete(course);
     }
     private boolean checkIsAdmin() {

@@ -10,9 +10,11 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import skillup_workspace.entity.Course;
+import skillup_workspace.entity.CourseStatus;
 import skillup_workspace.entity.Enrollment;
 import skillup_workspace.entity.User;
 import skillup_workspace.repository.CourseRepository;
+import skillup_workspace.repository.CourseFavoriteRepository;
 import skillup_workspace.repository.EnrollmentRepository;
 import skillup_workspace.repository.UserRepository;
 import skillup_workspace.security.JwtService;
@@ -21,6 +23,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -65,6 +68,9 @@ class CourseHardDeleteIntegrationTest {
     private CourseRepository courseRepository;
 
     @Autowired
+    private CourseFavoriteRepository courseFavoriteRepository;
+
+    @Autowired
     private EnrollmentRepository enrollmentRepository;
 
     @Autowired
@@ -82,6 +88,7 @@ class CourseHardDeleteIntegrationTest {
     @BeforeEach
     void setUp() {
         enrollmentRepository.deleteAll();
+        courseFavoriteRepository.deleteAll();
         courseRepository.deleteAll();
         userRepository.deleteAll();
 
@@ -103,6 +110,42 @@ class CourseHardDeleteIntegrationTest {
                 Integer.class,
                 course.getId()
         ));
+    }
+
+    @Test
+    void favoriteCanBeReadAddedAndRemovedIdempotently() throws Exception {
+        Course course = saveCourse();
+        String studentToken = jwtService.generateToken(student);
+        String path = "/api/v1/courses/" + course.getId() + "/favorite";
+
+        HttpResponse<String> initialStatus = send(HttpMethod.GET, path, studentToken, null);
+        assertEquals(200, initialStatus.statusCode());
+        assertTrue(initialStatus.body().contains("\"favorited\":false"));
+
+        assertEquals(204, send(HttpMethod.PUT, path, studentToken, null).statusCode());
+        assertEquals(204, send(HttpMethod.PUT, path, studentToken, null).statusCode());
+        assertEquals(1, courseFavoriteRepository.count());
+
+        HttpResponse<String> savedStatus = send(HttpMethod.GET, path, studentToken, null);
+        assertEquals(200, savedStatus.statusCode());
+        assertTrue(savedStatus.body().contains("\"favorited\":true"));
+
+        assertEquals(204, send(HttpMethod.DELETE, path, studentToken, null).statusCode());
+        assertEquals(204, send(HttpMethod.DELETE, path, studentToken, null).statusCode());
+        assertEquals(0, courseFavoriteRepository.count());
+    }
+
+    @Test
+    void deletingCourseAlsoRemovesItsFavorites() throws Exception {
+        Course course = saveCourse();
+        String studentToken = jwtService.generateToken(student);
+        String favoritePath = "/api/v1/courses/" + course.getId() + "/favorite";
+        assertEquals(204, send(HttpMethod.PUT, favoritePath, studentToken, null).statusCode());
+
+        HttpResponse<String> response = delete(course.getId(), jwtService.generateToken(admin));
+
+        assertEquals(204, response.statusCode());
+        assertEquals(0, courseFavoriteRepository.count());
     }
 
     @Test
@@ -303,12 +346,80 @@ class CourseHardDeleteIntegrationTest {
         assertEquals(201, response.statusCode());
         assertEquals(1, courseRepository.count());
         assertTrue(response.body().contains("\"title\":\"Curso de prueba\""));
+        assertTrue(response.body().contains("\"createdAt\":"));
         Long createdCourseId = courseRepository.findAll().get(0).getId();
         assertNotNull(jdbcTemplate.queryForObject(
                 "select created_at from courses where course_id = ?",
                 java.sql.Timestamp.class,
                 createdCourseId
         ));
+    }
+
+    @Test
+    void creatingDraftAutomaticallyPersistsCreatedAt() throws Exception {
+        String draftRequest = COURSE_REQUEST.replace(
+                "\"modality\": {}",
+                "\"modality\": {}, \"status\": \"BORRADOR\""
+        );
+        HttpResponse<String> response = send(
+                HttpMethod.POST,
+                "/api/v1/courses",
+                jwtService.generateToken(admin),
+                draftRequest
+        );
+
+        assertEquals(201, response.statusCode());
+        Course draft = courseRepository.findAll().get(0);
+        assertEquals(CourseStatus.BORRADOR, draft.getStatus());
+        assertNotNull(draft.getCreatedAt());
+        assertTrue(response.body().contains("\"createdAt\":"));
+    }
+
+    @Test
+    void publishingDraftRefreshesPersistedCreatedAt() throws Exception {
+        Course course = saveCourse();
+        LocalDateTime previousCreatedAt = LocalDateTime.now().minusDays(1);
+        course.setStatus(CourseStatus.BORRADOR);
+        course.setIsActive(false);
+        course.setCreatedAt(previousCreatedAt);
+        courseRepository.saveAndFlush(course);
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/courses/" + course.getId() + "/status"))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtService.generateToken(admin))
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .method("PATCH", HttpRequest.BodyPublishers.ofString("{\"status\":\"PUBLICADO\"}"))
+                .build();
+        HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode());
+        Course published = courseRepository.findById(course.getId()).orElseThrow();
+        assertEquals(CourseStatus.PUBLICADO, published.getStatus());
+        assertTrue(published.getCreatedAt().isAfter(previousCreatedAt));
+        assertTrue(response.body().contains("\"createdAt\":"));
+    }
+
+    @Test
+    void publicCourseListIncludesCreatedAtAndActiveEnrollmentCount() throws Exception {
+        Course course = saveCourse();
+        Enrollment activeEnrollment = new Enrollment();
+        activeEnrollment.setCourse(course);
+        activeEnrollment.setUser(student);
+        activeEnrollment.setStatus("ACTIVE");
+        enrollmentRepository.save(activeEnrollment);
+
+        User anotherStudent = saveUser("inactive-student@example.com", "ALUMNO");
+        Enrollment inactiveEnrollment = new Enrollment();
+        inactiveEnrollment.setCourse(course);
+        inactiveEnrollment.setUser(anotherStudent);
+        inactiveEnrollment.setStatus("COMPLETED");
+        enrollmentRepository.saveAndFlush(inactiveEnrollment);
+
+        HttpResponse<String> response = send(HttpMethod.GET, "/api/v1/courses", null, null);
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"createdAt\":"));
+        assertTrue(response.body().contains("\"activeEnrollmentCount\":1"));
     }
 
     @Test

@@ -7,6 +7,7 @@ import lombok.Setter;
 import skillup_workspace.entity.CourseStatus;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -24,4 +25,6 @@ public class CourseResponseDTO {
     private LocalDate nextStartDate;
     private ScheduleResponseDTO schedule;
     private CourseStatus status;
+    private LocalDateTime createdAt;
+    private Long activeEnrollmentCount;
 }
