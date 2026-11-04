@@ -27,9 +27,9 @@ export default function CourseSection() {
   }, [])
 
   return (
-    <section className="mx-auto max-w-7xl px-4 pb-16">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-xl font-bold">Cursos destacados</h2>
+    <section className="mx-auto w-full max-w-[1200px] px-4 pb-12 sm:px-6 md:pb-16 lg:px-8 xl:max-w-[1360px] xl:px-10">
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h2 className="text-lg font-bold sm:text-xl">Cursos destacados</h2>
 
         <Button to="/cursos" variant="text">
           Ver todos <ArrowRight size={14} />
