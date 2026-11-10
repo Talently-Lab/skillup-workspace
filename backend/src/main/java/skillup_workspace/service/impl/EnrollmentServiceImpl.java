@@ -122,6 +122,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                     course.getSchedule().getDays(),
                     course.getSchedule().getStartTime(),
                     course.getSchedule().getEndTime(),
+                    course.getSchedule().getLiveClassUrl(),
                     course.getSchedule().getTotalDurationMinutes(),
                     course.getSchedule().getRecordedContentMinutes()
             ));

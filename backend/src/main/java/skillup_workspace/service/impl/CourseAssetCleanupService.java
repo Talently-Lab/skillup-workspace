@@ -44,7 +44,9 @@ public class CourseAssetCleanupService {
     public void deleteReplacedAssetsWhenUnused(List<String> replacedUrls) {
         for (String url : replacedUrls) {
             try {
-                if (!courseRepository.existsByImageUrl(url) && !courseRepository.existsBySyllabusUrl(url)) {
+                if (!courseRepository.existsByImageUrl(url)
+                        && !courseRepository.existsBySyllabusUrl(url)
+                        && !courseRepository.existsByModuleVideoUrl(url)) {
                     r2StorageService.deleteManagedAsset(url);
                 }
             } catch (RuntimeException exception) {

@@ -11,6 +11,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.multipart.MultipartFile;
+import skillup_workspace.dto.request.ContentModuleRequestDTO;
 import skillup_workspace.dto.request.CourseRequestDTO;
 import skillup_workspace.dto.response.CourseDetailResponseDTO;
 import skillup_workspace.dto.response.CourseResponseDTO;
@@ -41,6 +42,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.net.URI;
 
 @Service
 @RequiredArgsConstructor
@@ -99,13 +102,25 @@ public class CourseServiceImpl implements CourseService {
             MultipartFile image,
             MultipartFile syllabus
     ) {
+        return createCourse(requestDTO, image, syllabus, Map.of());
+    }
+
+    @Override
+    public CourseDetailResponseDTO createCourse(
+            CourseRequestDTO requestDTO,
+            MultipartFile image,
+            MultipartFile syllabus,
+            Map<String, MultipartFile> moduleVideos
+    ) {
         long processStartedAt = System.nanoTime();
         List<StoredAsset> uploadedAssets = new ArrayList<>();
+        Map<Integer, PreparedUpload> preparedModuleVideos = new HashMap<>();
         AtomicBoolean rollbackCleanupRegistered = new AtomicBoolean();
         String result = "failure";
         boolean uploadPermitAcquired = false;
         try {
-            if (image != null || syllabus != null) {
+            validateModuleVideoRequest(requestDTO, moduleVideos);
+            if (image != null || syllabus != null || hasModuleVideoFiles(moduleVideos)) {
                 long waitStartedAt = System.nanoTime();
                 try {
                     courseUploadBulkhead.acquire();
@@ -164,6 +179,15 @@ public class CourseServiceImpl implements CourseService {
                 if (syllabus != null) {
                     preparedSyllabus = r2StorageService.prepareUpload(syllabus, UploadPurpose.COURSE_SYLLABUS);
                 }
+                for (ContentModuleRequestDTO module : modulesOrEmpty(requestDTO)) {
+                    MultipartFile video = moduleVideoFor(module, moduleVideos);
+                    if (video != null && !video.isEmpty()) {
+                        preparedModuleVideos.put(
+                                module.getModuleNumber(),
+                                r2StorageService.prepareUpload(video, UploadPurpose.COURSE_MODULE_VIDEO)
+                        );
+                    }
+                }
             } catch (RuntimeException exception) {
                 CourseCreationPerformanceLog.warning(log, "course_creation_stage")
                         .addKeyValue("stage", "file_validation")
@@ -197,6 +221,11 @@ public class CourseServiceImpl implements CourseService {
                         () -> r2StorageService.upload(syllabusContent)
                 ));
             }
+            preparedModuleVideos.forEach((moduleNumber, upload) -> uploadTasks.add(new UploadTask(
+                    "module-video-" + moduleNumber,
+                    upload.fileSize(),
+                    () -> r2StorageService.upload(upload)
+            )));
 
             uploadAssets(uploadTasks, uploadedAssets);
             for (StoredAsset asset : uploadedAssets) {
@@ -206,6 +235,8 @@ public class CourseServiceImpl implements CourseService {
                     course.setSyllabusUrl(asset.publicUrl());
                 }
             }
+            setModuleVideoUrls(requestDTO, preparedModuleVideos, uploadedAssets);
+            course.setContentModules(requestDTO.getContentModules());
 
             CourseDetailResponseDTO response = coursePersistenceService.persistCreatedCourse(
                     course,
@@ -346,18 +377,42 @@ public class CourseServiceImpl implements CourseService {
             MultipartFile image,
             MultipartFile syllabus
     ) {
+        return updateCourse(id, requestDTO, image, syllabus, Map.of());
+    }
+
+    @Override
+    @Transactional
+    public CourseDetailResponseDTO updateCourse(
+            Long id,
+            CourseRequestDTO requestDTO,
+            MultipartFile image,
+            MultipartFile syllabus,
+            Map<String, MultipartFile> moduleVideos
+    ) {
+        validateModuleVideoRequest(requestDTO, moduleVideos);
         Course existingCourse = courseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Curso no encontrado con el id: " + id));
 
         String oldImageUrl = existingCourse.getImageUrl();
         String oldSyllabusUrl = existingCourse.getSyllabusUrl();
+        Set<String> oldModuleVideoUrls = moduleVideoUrls(existingCourse.getContentModules());
         List<StoredAsset> uploadedAssets = new ArrayList<>();
         List<String> replacedUrls = new ArrayList<>();
+        Map<Integer, PreparedUpload> preparedModuleVideos = new HashMap<>();
 
         try {
             courseMapper.updateEntityFromDto(requestDTO, existingCourse);
             existingCourse.setImageUrl(oldImageUrl);
             existingCourse.setSyllabusUrl(oldSyllabusUrl);
+            for (ContentModuleRequestDTO module : modulesOrEmpty(requestDTO)) {
+                MultipartFile video = moduleVideoFor(module, moduleVideos);
+                if (video != null && !video.isEmpty()) {
+                    preparedModuleVideos.put(
+                            module.getModuleNumber(),
+                            r2StorageService.prepareUpload(video, UploadPurpose.COURSE_MODULE_VIDEO)
+                    );
+                }
+            }
 
             if (image != null) {
                 byte[] webpImage = imageConversionService.convertToWebp(image).content();
@@ -376,9 +431,23 @@ public class CourseServiceImpl implements CourseService {
                     replacedUrls.add(oldSyllabusUrl);
                 }
             }
+            for (Map.Entry<Integer, PreparedUpload> entry : preparedModuleVideos.entrySet()) {
+                StoredAsset asset = r2StorageService.upload(entry.getValue());
+                uploadedAssets.add(asset);
+                requestDTO.getContentModules().stream()
+                        .filter(module -> Objects.equals(module.getModuleNumber(), entry.getKey()))
+                        .findFirst()
+                        .orElseThrow()
+                        .setVideoUrl(asset.publicUrl());
+            }
+            existingCourse.setContentModules(requestDTO.getContentModules());
 
             Course updatedCourse = courseRepository.save(existingCourse);
             CourseDetailResponseDTO response = courseMapper.toDetailResponseDTO(updatedCourse);
+            Set<String> newModuleVideoUrls = moduleVideoUrls(updatedCourse.getContentModules());
+            oldModuleVideoUrls.stream()
+                    .filter(url -> !newModuleVideoUrls.contains(url))
+                    .forEach(replacedUrls::add);
             registerAssetCleanup(uploadedAssets, replacedUrls);
             return response;
         } catch (RuntimeException exception) {
@@ -402,6 +471,123 @@ public class CourseServiceImpl implements CourseService {
         courseFavoriteRepository.deleteByCourse_Id(id);
         courseRepository.delete(course);
     }
+
+    private void validateModuleVideoRequest(
+            CourseRequestDTO requestDTO,
+            Map<String, MultipartFile> moduleVideos
+    ) {
+        Map<String, MultipartFile> files = moduleVideos == null ? Map.of() : moduleVideos;
+        boolean liveCourse = requestDTO.getModality() != null
+                && requestDTO.getModality().getType() != null
+                && requestDTO.getModality().getType().trim().equalsIgnoreCase("EN VIVO");
+        if (requestDTO.getSchedule() != null) {
+            validateHttpUrl(requestDTO.getSchedule().getLiveClassUrl(), "La URL de la clase en vivo no es válida.");
+        }
+        Map<Integer, ContentModuleRequestDTO> modulesByNumber = new HashMap<>();
+        for (ContentModuleRequestDTO module : modulesOrEmpty(requestDTO)) {
+            if (liveCourse && module.getVideoUrl() != null && !module.getVideoUrl().isBlank()) {
+                throw new IllegalArgumentException("Los videos por módulo solo se permiten para cursos grabados.");
+            }
+            validateHttpUrl(module.getVideoUrl(), "La URL del video del módulo no es válida.");
+            if (module.getModuleNumber() != null) {
+                if (modulesByNumber.put(module.getModuleNumber(), module) != null) {
+                    throw new IllegalArgumentException("Los números de módulo no pueden repetirse.");
+                }
+            }
+        }
+
+        if (liveCourse && hasModuleVideoFiles(files)) {
+            throw new IllegalArgumentException("Los videos por módulo solo se permiten para cursos grabados.");
+        }
+
+        for (Map.Entry<String, MultipartFile> entry : files.entrySet()) {
+            if (isCourseAssetPart(entry.getKey())) continue;
+            if (entry.getValue() == null || entry.getValue().isEmpty()) continue;
+            Integer moduleNumber = modulesByNumber.keySet().stream()
+                    .filter(number -> entry.getKey().equals(moduleVideoPartName(number)))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "El archivo de video no corresponde a ningún módulo."
+                    ));
+            ContentModuleRequestDTO module = modulesByNumber.get(moduleNumber);
+            if (module.getVideoUrl() != null && !module.getVideoUrl().isBlank()) {
+                throw new IllegalArgumentException(
+                        "Cada módulo puede tener un archivo de video o una URL, pero no ambos."
+                );
+            }
+        }
+    }
+
+    private void validateHttpUrl(String value, String errorMessage) {
+        if (value == null || value.isBlank()) return;
+        try {
+            URI uri = URI.create(value.trim());
+            String scheme = uri.getScheme();
+            if (scheme == null
+                    || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
+                    || uri.getHost() == null
+                    || uri.getUserInfo() != null) {
+                throw new IllegalArgumentException();
+            }
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException(errorMessage);
+        }
+    }
+
+    private boolean hasModuleVideoFiles(Map<String, MultipartFile> moduleVideos) {
+        return moduleVideos != null && moduleVideos.entrySet().stream()
+                .filter(entry -> !isCourseAssetPart(entry.getKey()))
+                .map(Map.Entry::getValue)
+                .anyMatch(file -> file != null && !file.isEmpty());
+    }
+
+    private boolean isCourseAssetPart(String name) {
+        return name.equals("course") || name.equals("image") || name.equals("syllabus");
+    }
+
+    private MultipartFile moduleVideoFor(
+            ContentModuleRequestDTO module,
+            Map<String, MultipartFile> moduleVideos
+    ) {
+        if (moduleVideos == null || module.getModuleNumber() == null) return null;
+        return moduleVideos.get(moduleVideoPartName(module.getModuleNumber()));
+    }
+
+    private String moduleVideoPartName(Integer moduleNumber) {
+        return "moduleVideo-" + moduleNumber;
+    }
+
+    private List<ContentModuleRequestDTO> modulesOrEmpty(CourseRequestDTO requestDTO) {
+        return requestDTO.getContentModules() == null ? List.of() : requestDTO.getContentModules();
+    }
+
+    private void setModuleVideoUrls(
+            CourseRequestDTO requestDTO,
+            Map<Integer, PreparedUpload> preparedModuleVideos,
+            List<StoredAsset> uploadedAssets
+    ) {
+        Map<String, String> uploadedUrlsByKey = new HashMap<>();
+        uploadedAssets.forEach(asset -> uploadedUrlsByKey.put(asset.objectKey(), asset.publicUrl()));
+        for (ContentModuleRequestDTO module : modulesOrEmpty(requestDTO)) {
+            PreparedUpload upload = preparedModuleVideos.get(module.getModuleNumber());
+            if (upload != null) {
+                String videoUrl = uploadedUrlsByKey.get(upload.objectKey());
+                if (videoUrl == null) {
+                    throw new R2StorageException("No se pudo confirmar la carga de video del módulo.");
+                }
+                module.setVideoUrl(videoUrl);
+            }
+        }
+    }
+
+    private Set<String> moduleVideoUrls(List<ContentModuleRequestDTO> modules) {
+        if (modules == null) return Set.of();
+        return modules.stream()
+                .map(ContentModuleRequestDTO::getVideoUrl)
+                .filter(url -> url != null && !url.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
     private boolean checkIsAdmin() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {

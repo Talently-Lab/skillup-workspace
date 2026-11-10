@@ -16,4 +16,5 @@ public class ContentModuleResponseDTO {
     private Integer moduleNumber;
     private String title;
     private List<String> topics;
+    private String videoUrl;
 }

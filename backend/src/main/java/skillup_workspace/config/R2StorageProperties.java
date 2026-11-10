@@ -18,4 +18,5 @@ public class R2StorageProperties {
     private int presignedUrlDurationSeconds = 300;
     private long maxImageSizeBytes = 5 * 1024 * 1024;
     private long maxPdfSizeBytes = 20 * 1024 * 1024;
+    private long maxVideoSizeBytes = 20 * 1024 * 1024;
 }

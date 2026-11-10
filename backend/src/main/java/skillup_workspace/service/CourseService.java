@@ -7,6 +7,7 @@ import skillup_workspace.entity.CourseStatus;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 public interface CourseService {
 
@@ -22,6 +23,13 @@ public interface CourseService {
             MultipartFile syllabus
     );
 
+    CourseDetailResponseDTO createCourse(
+            CourseRequestDTO requestDTO,
+            MultipartFile image,
+            MultipartFile syllabus,
+            Map<String, MultipartFile> moduleVideos
+    );
+
     CourseDetailResponseDTO updateCourse(Long id, CourseRequestDTO requestDTO);
 
     CourseDetailResponseDTO updateCourseStatus(Long id, CourseStatus status);
@@ -31,6 +39,14 @@ public interface CourseService {
             CourseRequestDTO requestDTO,
             MultipartFile image,
             MultipartFile syllabus
+    );
+
+    CourseDetailResponseDTO updateCourse(
+            Long id,
+            CourseRequestDTO requestDTO,
+            MultipartFile image,
+            MultipartFile syllabus,
+            Map<String, MultipartFile> moduleVideos
     );
 
     void deleteCourse(Long id);

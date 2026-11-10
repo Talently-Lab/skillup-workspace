@@ -38,6 +38,7 @@ import skillup_workspace.service.CourseService;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @RestController
@@ -97,10 +98,14 @@ public class CourseController {
                     Crea un curso en POST /api/v1/courses usando multipart/form-data. La parte `course`
                     es obligatoria y contiene el JSON de CourseRequestDTO. Las partes opcionales `image`
                     y `syllabus` aceptan, respectivamente, una imagen compatible con ImageIO y un PDF.
-                    El servidor convierte la imagen a WebP, guarda los archivos en R2 y administra sus enlaces.
+                    Cada archivo opcional `moduleVideo-N` carga el video del módulo N (máximo 20 MB,
+                    MP4/WEBM/MOV) y solo se permite para la modalidad `GRABADO`; los videos por URL
+                    también están restringidos a esa modalidad. Si se envía un video para un curso
+                    `EN VIVO`, la solicitud responde 400. El servidor convierte la imagen a WebP,
+                    guarda los archivos en R2 y devuelve sus enlaces junto con el curso.
                     """,
             requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    description = "Datos del curso y archivos opcionales",
+                    description = "Datos del curso; las partes de video usan nombres moduleVideo-N según el módulo",
                     required = true,
                     content = @Content(
                             mediaType = MediaType.MULTIPART_FORM_DATA_VALUE,
@@ -121,7 +126,8 @@ public class CourseController {
                                                 "schedule": {
                                                   "days": "Martes y Jueves",
                                                   "startTime": "18:00",
-                                                  "endTime": "20:00"
+                                                  "endTime": "20:00",
+                                                  "liveClassUrl": "https://meet.google.com/abc-defg-hij"
                                                 },
                                                 "modality": {
                                                   "type": "EN VIVO",
@@ -141,6 +147,7 @@ public class CourseController {
                                                   {
                                                     "moduleNumber": 1,
                                                     "title": "Introducción al Diseño UX",
+                                                    "videoUrl": "",
                                                     "topics": [
                                                       "¿Qué es UX/UI?",
                                                       "Metodología Design Thinking"
@@ -164,7 +171,7 @@ public class CourseController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "Datos de entrada inválidos",
+                    description = "Datos inválidos o se envió un video por archivo/URL para un curso EN VIVO",
                     content = @Content
             ),
             @ApiResponse(
@@ -198,7 +205,9 @@ public class CourseController {
             @Parameter(description = "Imagen compatible con ImageIO (opcional); se almacena como WebP")
             @RequestPart(value = "image", required = false) MultipartFile image,
             @Parameter(description = "Programa PDF (opcional)")
-            @RequestPart(value = "syllabus", required = false) MultipartFile syllabus) {
+            @RequestPart(value = "syllabus", required = false) MultipartFile syllabus,
+            @Parameter(hidden = true)
+            @RequestParam Map<String, MultipartFile> moduleVideos) {
         MDC.put("imageBytes", Long.toString(image == null ? 0 : image.getSize()));
         MDC.put("pdfBytes", Long.toString(syllabus == null ? 0 : syllabus.getSize()));
         long validationStartedAt = System.nanoTime();
@@ -219,7 +228,9 @@ public class CourseController {
                 .addKeyValue("durationMs", (System.nanoTime() - validationStartedAt) / 1_000_000)
                 .addKeyValue("result", "success")
                 .log("Course request validation completed");
-        CourseDetailResponseDTO createdCourse = courseService.createCourse(requestDTO, image, syllabus);
+        CourseDetailResponseDTO createdCourse = hasAdditionalFileParts(moduleVideos)
+                ? courseService.createCourse(requestDTO, image, syllabus, moduleVideos)
+                : courseService.createCourse(requestDTO, image, syllabus);
         return ResponseEntity.status(HttpStatus.CREATED).body(createdCourse);
     }
 
@@ -229,8 +240,12 @@ public class CourseController {
                     Actualiza el curso indicado por {id} usando PUT /api/v1/courses/{id} y multipart/form-data.
                     La parte obligatoria `course` contiene el JSON completo de CourseRequestDTO. Las partes
                     opcionales `image` y `syllabus` aceptan, respectivamente, una imagen compatible con
-                    ImageIO y un PDF. La imagen se convierte a WebP. Si se omite un archivo, se conserva el
-                    recurso actual. Los enlaces de imagen y programa son administrados por el servidor.
+                    ImageIO y un PDF. Cada archivo opcional `moduleVideo-N` carga el video del módulo N
+                    (máximo 20 MB, MP4/WEBM/MOV) y solo se permite para la modalidad `GRABADO`; los videos
+                    por URL también están restringidos a esa modalidad. Si se envía un video para un curso
+                    `EN VIVO`, la solicitud responde 400. La imagen se convierte a WebP. Si se omite un
+                    archivo, se conserva el recurso actual. Los enlaces de imagen, programa y videos son
+                    administrados por el servidor.
                     """,
             requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
                     description = "Datos del curso y archivos opcionales. Si no se envía un archivo, se conserva el actual.",
@@ -254,7 +269,8 @@ public class CourseController {
                                                 "schedule": {
                                                   "days": "Martes y Jueves",
                                                   "startTime": "18:00",
-                                                  "endTime": "20:00"
+                                                  "endTime": "20:00",
+                                                  "liveClassUrl": "https://meet.google.com/abc-defg-hij"
                                                 },
                                                 "modality": {
                                                   "type": "EN VIVO",
@@ -274,6 +290,7 @@ public class CourseController {
                                                   {
                                                     "moduleNumber": 1,
                                                     "title": "Introducción al Diseño UX",
+                                                    "videoUrl": "",
                                                     "topics": [
                                                       "¿Qué es UX/UI?",
                                                       "Metodología Design Thinking"
@@ -297,7 +314,7 @@ public class CourseController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "Datos de entrada inválidos",
+                    description = "Datos inválidos o se envió un video por archivo/URL para un curso EN VIVO",
                     content = @Content
             ),
             @ApiResponse(
@@ -338,9 +355,14 @@ public class CourseController {
             @Parameter(description = "Imagen compatible con ImageIO (opcional); se almacena como WebP")
             @RequestPart(value = "image", required = false) MultipartFile image,
             @Parameter(description = "Programa PDF (opcional)")
-            @RequestPart(value = "syllabus", required = false) MultipartFile syllabus) {
+            @RequestPart(value = "syllabus", required = false) MultipartFile syllabus,
+            @Parameter(hidden = true)
+            @RequestParam Map<String, MultipartFile> moduleVideos) {
         CourseRequestDTO requestDTO = parseCoursePart(coursePart);
-        return ResponseEntity.ok(courseService.updateCourse(id, requestDTO, image, syllabus));
+        CourseDetailResponseDTO updatedCourse = hasAdditionalFileParts(moduleVideos)
+                ? courseService.updateCourse(id, requestDTO, image, syllabus, moduleVideos)
+                : courseService.updateCourse(id, requestDTO, image, syllabus);
+        return ResponseEntity.ok(updatedCourse);
     }
 
     @Operation(
@@ -428,5 +450,10 @@ public class CourseController {
             @PathVariable Long id) {
         courseService.deleteCourse(id);
         return ResponseEntity.noContent().build();
+    }
+
+    private boolean hasAdditionalFileParts(Map<String, MultipartFile> files) {
+        return files != null && files.keySet().stream()
+                .anyMatch(name -> !name.equals("course") && !name.equals("image") && !name.equals("syllabus"));
     }
 }

@@ -25,6 +25,14 @@ public class CourseMultipartRequestDTO {
     )
     private String syllabus;
 
+    @Schema(
+            name = "moduleVideo-{moduleNumber}",
+            type = "string",
+            format = "binary",
+            description = "Video opcional de un curso GRABADO; repite la parte por módulo (MP4, WEBM o MOV, máximo 20 MB). No se admite para cursos EN VIVO."
+    )
+    private String moduleVideo;
+
     public CourseRequestDTO getCourse() {
         return course;
     }
@@ -36,4 +44,9 @@ public class CourseMultipartRequestDTO {
     public String getSyllabus() {
         return syllabus;
     }
+
+    public String getModuleVideo() {
+        return moduleVideo;
+    }
+
 }

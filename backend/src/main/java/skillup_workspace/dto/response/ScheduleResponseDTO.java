@@ -15,6 +15,8 @@ public class ScheduleResponseDTO {
     private String days;
     private String startTime;
     private String endTime;
+    @Schema(description = "Enlace de la clase en vivo, por ejemplo Meet o Zoom")
+    private String liveClassUrl;
     @Schema(description = "Duración total exacta en minutos")
     private Integer totalDurationMinutes;
     @Schema(description = "Duración estimada del contenido grabado en minutos")

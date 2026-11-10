@@ -51,6 +51,10 @@ public class R2StorageService {
     private static final String JPEG = "image/jpeg";
     private static final String WEBP = "image/webp";
     private static final String PDF = "application/pdf";
+    private static final String MP4 = "video/mp4";
+    private static final String WEBM = "video/webm";
+    private static final String QUICKTIME = "video/quicktime";
+    private static final String VIDEO_PREFIX = "courses/videos/";
 
     private final R2StorageProperties properties;
     private final ObjectProvider<S3Presigner> presignerProvider;
@@ -277,17 +281,13 @@ public class R2StorageService {
         }
         String extension = fileName.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
         contentType = normalizeContentType(contentType);
-        long maxSize = purpose == UploadPurpose.COURSE_IMAGE
-                ? properties.getMaxImageSizeBytes()
-                : properties.getMaxPdfSizeBytes();
+        long maxSize = maxSizeFor(purpose);
 
         if (fileSize < 1 || fileSize > maxSize) {
             throw new InvalidUploadException(
                     fileSize < 1
                             ? "El archivo no puede estar vacío."
-                            : purpose == UploadPurpose.COURSE_IMAGE
-                                    ? "La imagen supera el límite de 5 MB."
-                                    : "El PDF supera el límite de 20 MB."
+                            : sizeLimitMessage(purpose)
             );
         }
 
@@ -304,6 +304,19 @@ public class R2StorageService {
             return extension.equals("jpeg") ? "jpg" : extension;
         }
 
+        if (purpose == UploadPurpose.COURSE_MODULE_VIDEO) {
+            boolean valid = switch (extension) {
+                case "mp4" -> MP4.equals(contentType);
+                case "webm" -> WEBM.equals(contentType);
+                case "mov" -> QUICKTIME.equals(contentType);
+                default -> false;
+            };
+            if (!valid) {
+                throw new InvalidUploadException("Selecciona un video MP4, WEBM o MOV válido.");
+            }
+            return extension;
+        }
+
         if (!"pdf".equals(extension) || !PDF.equals(contentType)) {
             throw new InvalidUploadException("Selecciona un documento PDF válido.");
         }
@@ -311,7 +324,11 @@ public class R2StorageService {
     }
 
     private String prefixFor(UploadPurpose purpose) {
-        return purpose == UploadPurpose.COURSE_IMAGE ? IMAGE_PREFIX : SYLLABUS_PREFIX;
+        return switch (purpose) {
+            case COURSE_IMAGE -> IMAGE_PREFIX;
+            case COURSE_SYLLABUS -> SYLLABUS_PREFIX;
+            case COURSE_MODULE_VIDEO -> VIDEO_PREFIX;
+        };
     }
 
     private boolean isManagedObjectKey(String objectKey) {
@@ -319,6 +336,8 @@ public class R2StorageService {
                 "^courses/images/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(?:png|jpg|webp)$"
         ) || objectKey.matches(
                 "^courses/syllabi/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.pdf$"
+        ) || objectKey.matches(
+                "^courses/videos/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(?:mp4|webm|mov)$"
         );
     }
 
@@ -354,24 +373,25 @@ public class R2StorageService {
     }
 
     private void validateObjectKey(CompleteUploadRequest request) {
-        String expectedPattern = request.purpose() == UploadPurpose.COURSE_IMAGE
-                ? "^courses/images/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(?:png|jpg|webp)$"
-                : "^courses/syllabi/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.pdf$";
+        String expectedPattern = switch (request.purpose()) {
+            case COURSE_IMAGE ->
+                    "^courses/images/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(?:png|jpg|webp)$";
+            case COURSE_SYLLABUS ->
+                    "^courses/syllabi/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.pdf$";
+            case COURSE_MODULE_VIDEO ->
+                    "^courses/videos/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(?:mp4|webm|mov)$";
+        };
         if (!request.objectKey().matches(expectedPattern)) {
             throw new InvalidUploadException("La referencia del archivo no es válida.");
         }
     }
 
     private void validateStoredObject(CompleteUploadRequest request, HeadObjectResponse object) {
-        long maxSize = request.purpose() == UploadPurpose.COURSE_IMAGE
-                ? properties.getMaxImageSizeBytes()
-                : properties.getMaxPdfSizeBytes();
+        long maxSize = maxSizeFor(request.purpose());
         if (object.contentLength() == null || object.contentLength() < 1 || object.contentLength() > maxSize) {
             throw new InvalidUploadException("El tamaño del archivo cargado no es válido.");
         }
-        String expectedContentType = extensionFor(request.objectKey()).equals("pdf")
-                ? PDF
-                : contentTypeForImage(extensionFor(request.objectKey()));
+        String expectedContentType = contentTypeFor(request.purpose(), extensionFor(request.objectKey()));
         if (!expectedContentType.equals(normalizeContentType(object.contentType()))) {
             throw new InvalidUploadException("El tipo de contenido del archivo cargado no es válido.");
         }
@@ -381,6 +401,15 @@ public class R2StorageService {
         String extension = extensionFor(objectKey);
         if (purpose == UploadPurpose.COURSE_SYLLABUS) {
             return containsAscii(bytes, "%PDF-");
+        }
+        if (purpose == UploadPurpose.COURSE_MODULE_VIDEO) {
+            return switch (extension) {
+                case "mp4", "mov" -> bytes.length >= 8 && asciiAt(bytes, 4, "ftyp");
+                case "webm" -> bytes.length >= 4
+                        && bytes[0] == 0x1a && bytes[1] == 0x45
+                        && bytes[2] == (byte) 0xdf && bytes[3] == (byte) 0xa3;
+                default -> false;
+            };
         }
         return switch (extension) {
             case "png" -> startsWith(bytes, new byte[]{
@@ -463,6 +492,34 @@ public class R2StorageService {
             case "webp" -> WEBP;
             default -> "";
         };
+    }
+
+    private long maxSizeFor(UploadPurpose purpose) {
+        return switch (purpose) {
+            case COURSE_IMAGE -> properties.getMaxImageSizeBytes();
+            case COURSE_SYLLABUS -> properties.getMaxPdfSizeBytes();
+            case COURSE_MODULE_VIDEO -> properties.getMaxVideoSizeBytes();
+        };
+    }
+
+    private String sizeLimitMessage(UploadPurpose purpose) {
+        return switch (purpose) {
+            case COURSE_IMAGE -> "La imagen supera el límite de 5 MB.";
+            case COURSE_SYLLABUS -> "El PDF supera el límite de 20 MB.";
+            case COURSE_MODULE_VIDEO -> "El video supera el límite de 20 MB.";
+        };
+    }
+
+    private String contentTypeFor(UploadPurpose purpose, String extension) {
+        if (purpose == UploadPurpose.COURSE_MODULE_VIDEO) {
+            return switch (extension) {
+                case "mp4" -> MP4;
+                case "webm" -> WEBM;
+                case "mov" -> QUICKTIME;
+                default -> "";
+            };
+        }
+        return purpose == UploadPurpose.COURSE_SYLLABUS ? PDF : contentTypeForImage(extension);
     }
 
     private String buildPublicUrl(String objectKey) {

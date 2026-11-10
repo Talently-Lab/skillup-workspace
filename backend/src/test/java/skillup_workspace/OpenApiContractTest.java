@@ -13,7 +13,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import skillup_workspace.controller.AuthController;
 import skillup_workspace.controller.CourseController;
 import skillup_workspace.dto.request.CourseRequestDTO;
+import skillup_workspace.dto.request.CourseMultipartRequestDTO;
 import skillup_workspace.dto.request.CourseStatusUpdateRequestDTO;
+import skillup_workspace.dto.request.ContentModuleRequestDTO;
 import skillup_workspace.dto.request.ScheduleRequestDTO;
 import skillup_workspace.dto.request.LoginRequest;
 import skillup_workspace.dto.request.RegisterRequest;
@@ -59,7 +61,30 @@ class OpenApiContractTest {
         assertNotNull(scheduleSchema);
         assertTrue(scheduleSchema.getProperties().containsKey("totalDurationMinutes"));
         assertTrue(scheduleSchema.getProperties().containsKey("recordedContentMinutes"));
+        assertTrue(scheduleSchema.getProperties().containsKey("liveClassUrl"));
         assertTrue(scheduleSchema.getRequired() == null || scheduleSchema.getRequired().isEmpty());
+    }
+
+    @Test
+    void contentModuleSchemaExposesVideoUrl() {
+        Map<String, Schema> schemas = ModelConverters.getInstance().read(ContentModuleRequestDTO.class);
+        Schema<?> moduleSchema = schemas.get("ContentModuleRequestDTO");
+
+        assertNotNull(moduleSchema);
+        assertTrue(moduleSchema.getProperties().containsKey("videoUrl"));
+    }
+
+    @Test
+    void courseMultipartSchemaDocumentsPerModuleVideoFileParts() {
+        Map<String, Schema> schemas = ModelConverters.getInstance().read(CourseMultipartRequestDTO.class);
+        Schema<?> multipartSchema = schemas.get("CourseMultipartRequest");
+
+        assertNotNull(multipartSchema);
+        assertTrue(multipartSchema.getProperties().containsKey("moduleVideo-{moduleNumber}"));
+        Schema<?> moduleVideoSchema =
+                (Schema<?>) multipartSchema.getProperties().get("moduleVideo-{moduleNumber}");
+        assertEquals("string", moduleVideoSchema.getType());
+        assertEquals("binary", moduleVideoSchema.getFormat());
     }
 
     @Test
@@ -118,10 +143,10 @@ class OpenApiContractTest {
     void courseMutationsDocumentAuthenticationAndAuthorizationResponses() throws NoSuchMethodException {
         List<Method> mutations = List.of(
                 CourseController.class.getMethod(
-                        "createCourse", Part.class, MultipartFile.class, MultipartFile.class
+                        "createCourse", Part.class, MultipartFile.class, MultipartFile.class, Map.class
                 ),
                 CourseController.class.getMethod(
-                        "updateCourse", Long.class, Part.class, MultipartFile.class, MultipartFile.class
+                        "updateCourse", Long.class, Part.class, MultipartFile.class, MultipartFile.class, Map.class
                 ),
                 CourseController.class.getMethod("deleteCourse", Long.class)
         );
@@ -137,10 +162,10 @@ class OpenApiContractTest {
     @Test
     void courseCreationAndUpdateConsumeMultipartFormData() throws NoSuchMethodException {
         Method create = CourseController.class.getMethod(
-                "createCourse", Part.class, MultipartFile.class, MultipartFile.class
+                "createCourse", Part.class, MultipartFile.class, MultipartFile.class, Map.class
         );
         Method update = CourseController.class.getMethod(
-                "updateCourse", Long.class, Part.class, MultipartFile.class, MultipartFile.class
+                "updateCourse", Long.class, Part.class, MultipartFile.class, MultipartFile.class, Map.class
         );
 
         assertEquals(MediaType.MULTIPART_FORM_DATA_VALUE, create.getAnnotation(PostMapping.class).consumes()[0]);

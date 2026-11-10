@@ -34,7 +34,8 @@ import java.util.List;
           "schedule": {
             "days": "Martes y Jueves",
             "startTime": "18:00",
-            "endTime": "20:00"
+            "endTime": "20:00",
+            "liveClassUrl": "https://meet.google.com/abc-defg-hij"
           },
           "modality": {
             "type": "EN VIVO",
@@ -54,6 +55,7 @@ import java.util.List;
             {
               "moduleNumber": 1,
               "title": "Introducción al Diseño UX",
+              "videoUrl": "",
               "topics": [
                 "¿Qué es UX/UI?",
                 "Metodología Design Thinking"
@@ -126,5 +128,16 @@ public class CourseRequestDTO {
         return recordedCourse
                 ? durationWeeks == null || durationWeeks > 0
                 : durationWeeks != null && durationWeeks > 0;
+    }
+
+    @AssertTrue(message = "El enlace de la clase en vivo solo se permite para la modalidad EN VIVO")
+    @JsonIgnore
+    @Schema(hidden = true)
+    public boolean isLiveClassUrlValid() {
+        String liveClassUrl = schedule == null ? null : schedule.getLiveClassUrl();
+        return liveClassUrl == null || liveClassUrl.isBlank()
+                || modality != null
+                && modality.getType() != null
+                && modality.getType().trim().equalsIgnoreCase("EN VIVO");
     }
 }

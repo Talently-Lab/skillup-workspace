@@ -17,6 +17,13 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
 
     boolean existsBySyllabusUrl(String syllabusUrl);
 
+    @Query(
+            value = "SELECT EXISTS (SELECT 1 FROM courses c "
+                    + "WHERE JSON_SEARCH(c.content_modules, 'one', :videoUrl, NULL, '$[*].videoUrl') IS NOT NULL)",
+            nativeQuery = true
+    )
+    boolean existsByModuleVideoUrl(@Param("videoUrl") String videoUrl);
+
     @Query("SELECT c FROM Course c WHERE :includeInactive = true OR c.isActive = true")
     List<Course> findAllCoursesWithFilter(@Param("includeInactive") boolean includeInactive);
 }

@@ -109,6 +109,46 @@ class R2StorageServiceTest {
     }
 
     @Test
+    void uploadModuleVideoStoresValidatedMp4UnderVideoPrefix() {
+        when(s3Client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
+                .thenReturn(PutObjectResponse.builder().build());
+        MockMultipartFile video = new MockMultipartFile(
+                "moduleVideo-1",
+                "lesson.mp4",
+                "video/mp4",
+                new byte[]{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'}
+        );
+
+        R2StorageService.StoredAsset uploaded =
+                storageService.upload(video, UploadPurpose.COURSE_MODULE_VIDEO);
+
+        assertTrue(uploaded.objectKey().matches("^courses/videos/[0-9a-f-]{36}\\.mp4$"));
+        org.mockito.ArgumentCaptor<PutObjectRequest> requestCaptor =
+                org.mockito.ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(s3Client).putObject(requestCaptor.capture(), any(RequestBody.class));
+        assertEquals("video/mp4", requestCaptor.getValue().contentType());
+    }
+
+    @Test
+    void uploadModuleVideoEnforcesTwentyMegabyteLimit() {
+        properties.setMaxVideoSizeBytes(4);
+        MockMultipartFile video = new MockMultipartFile(
+                "moduleVideo-1",
+                "lesson.mp4",
+                "video/mp4",
+                new byte[]{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'}
+        );
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> storageService.upload(video, UploadPurpose.COURSE_MODULE_VIDEO)
+        );
+
+        assertEquals("El video supera el límite de 20 MB.", error.getMessage());
+        verify(s3Client, never()).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+    }
+
+    @Test
     void uploadRejectsFileWhoseSignatureDoesNotMatchItsMimeAndExtension() {
         MockMultipartFile disguisedPdf = new MockMultipartFile(
                 "image",
