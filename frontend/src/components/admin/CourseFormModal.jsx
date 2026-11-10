@@ -108,6 +108,7 @@ const emptyCourse = {
   scheduleDays: '',
   scheduleStartTime: '',
   scheduleEndTime: '',
+  liveClassUrl: '',
   modalityType: '',
   modalityFrequency: '',
   modalityDuration: '',
@@ -118,6 +119,10 @@ const emptyCourse = {
     {
       title: '',
       topics: [''],
+      recordedVideos: [],
+      youtubeUrl: '',
+      recordedVideoError: '',
+      recordedVideoInputMode: 'file',
       isExpanded: true,
     },
   ],
@@ -132,6 +137,42 @@ function getSafeImageUrl(value) {
   } catch {
     return ''
   }
+}
+
+function getYouTubeVideo(value) {
+  try {
+    const normalizedValue = value.trim().startsWith('http')
+      ? value.trim()
+      : `https://${value.trim()}`
+    const url = new URL(normalizedValue)
+    const hostname = url.hostname.toLowerCase()
+    const isYouTubeHost =
+      hostname === 'youtu.be' ||
+      hostname === 'youtube.com' ||
+      hostname.endsWith('.youtube.com') ||
+      hostname === 'youtube-nocookie.com' ||
+      hostname.endsWith('.youtube-nocookie.com')
+
+    if (!isYouTubeHost || !['http:', 'https:'].includes(url.protocol)) return null
+
+    const videoId =
+      hostname === 'youtu.be'
+        ? url.pathname.split('/').filter(Boolean)[0]
+        : url.searchParams.get('v') ??
+          url.pathname.match(/^\/(?:embed|shorts|live)\/([^/?]+)/)?.[1]
+
+    if (!videoId || !/^[\w-]{11}$/.test(videoId)) return null
+    return {
+      url: url.href,
+      embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}`,
+    }
+  } catch {
+    return null
+  }
+}
+
+function createRecordedVideoId() {
+  return `recorded-video-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function getCourseFormValues(course) {
@@ -158,6 +199,7 @@ function getCourseFormValues(course) {
     scheduleDays,
     scheduleStartTime: course.schedule?.startTime ?? '',
     scheduleEndTime: course.schedule?.endTime ?? '',
+    liveClassUrl: course.schedule?.liveClassUrl ?? '',
     modalityType: course.modality?.type ?? '',
     modalityFrequency: course.modality?.frequency ?? '',
     modalityDuration: course.modality?.durationPerClass ?? '',
@@ -174,6 +216,17 @@ function getCourseFormValues(course) {
       ? course.contentModules.map((module) => ({
           title: module.title ?? '',
           topics: Array.isArray(module.topics) && module.topics.length ? [...module.topics] : [''],
+          recordedVideos: module.videoUrl
+            ? [{
+                id: createRecordedVideoId(),
+                ...(getYouTubeVideo(module.videoUrl)
+                  ? { type: 'youtube', ...getYouTubeVideo(module.videoUrl) }
+                  : { type: 'url', url: module.videoUrl }),
+              }]
+            : [],
+          youtubeUrl: '',
+          recordedVideoError: '',
+          recordedVideoInputMode: 'file',
           isExpanded: true,
         }))
       : [],
@@ -214,6 +267,8 @@ function CourseFormModal({ course, onClose, onSaved }) {
   const imageInputRef = useRef(null)
   const imagePreviewUrlRef = useRef('')
   const syllabusInputRef = useRef(null)
+  const recordedVideoInputRefs = useRef(new Map())
+  const recordedVideoPreviewUrlsRef = useRef(new Set())
   const isEditing = Boolean(course?.id)
   const currentImageUrl = getSafeImageUrl(values.imageUrl)
   const currentSyllabusUrl = getSafeImageUrl(values.syllabusUrl)
@@ -233,7 +288,13 @@ function CourseFormModal({ course, onClose, onSaved }) {
     const normalizeModules = (modules) =>
       modules.map((module) => {
         const normalizedModule = { ...module }
+        const video = module.recordedVideos[0]
+        normalizedModule.videoUrl = video?.type === 'file' ? 'local-file' : video?.url ?? ''
         delete normalizedModule.isExpanded
+        delete normalizedModule.recordedVideos
+        delete normalizedModule.youtubeUrl
+        delete normalizedModule.recordedVideoError
+        delete normalizedModule.recordedVideoInputMode
         return normalizedModule
       })
     const current = { ...values, contentModules: normalizeModules(values.contentModules) }
@@ -242,7 +303,11 @@ function CourseFormModal({ course, onClose, onSaved }) {
       contentModules: normalizeModules(initialValues.contentModules),
     }
     return (
-      Boolean(imageFile || syllabusFile) ||
+      Boolean(
+        imageFile ||
+        syllabusFile ||
+        values.contentModules.some((module) => module.youtubeUrl.trim()),
+      ) ||
       JSON.stringify(current) !== JSON.stringify(initial)
     )
   }, [imageFile, initialValues, syllabusFile, values])
@@ -314,6 +379,10 @@ function CourseFormModal({ course, onClose, onSaved }) {
   }, [])
   useEffect(() => () => {
     if (imagePreviewUrlRef.current) URL.revokeObjectURL(imagePreviewUrlRef.current)
+  }, [])
+  useEffect(() => () => {
+    recordedVideoPreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+    recordedVideoPreviewUrlsRef.current.clear()
   }, [])
 
   useEffect(() => {
@@ -533,6 +602,95 @@ function CourseFormModal({ course, onClose, onSaved }) {
     if (syllabusInputRef.current) syllabusInputRef.current.value = ''
   }
 
+  const selectRecordedVideos = (moduleIndex, event) => {
+    const file = event.target.files?.[0]
+    const module = values.contentModules[moduleIndex]
+    const supportedVideoTypes = ['video/mp4', 'video/webm', 'video/quicktime']
+    const selectedVideo = file && supportedVideoTypes.includes(file.type.toLowerCase())
+      && file.size <= 20 * 1024 * 1024 ? (() => {
+      const previewUrl = URL.createObjectURL(file)
+      recordedVideoPreviewUrlsRef.current.add(previewUrl)
+      return {
+        id: createRecordedVideoId(),
+        type: 'file',
+        file,
+        previewUrl,
+      }
+    })() : null
+
+    if (selectedVideo) {
+      module.recordedVideos.forEach((video) => {
+        if (video.type === 'file') {
+          URL.revokeObjectURL(video.previewUrl)
+          recordedVideoPreviewUrlsRef.current.delete(video.previewUrl)
+        }
+      })
+      updateModule(moduleIndex, 'recordedVideos', [selectedVideo])
+    }
+    updateModule(
+      moduleIndex,
+      'recordedVideoError',
+      file && !selectedVideo
+        ? file.size > 20 * 1024 * 1024
+          ? 'El video no puede superar los 20 MB.'
+          : `No se pudo agregar ${file.name}. Selecciona un video MP4, WEBM o MOV.`
+        : '',
+    )
+    event.target.value = ''
+  }
+
+  const addYouTubeVideo = (moduleIndex) => {
+    const module = values.contentModules[moduleIndex]
+    const video = getYouTubeVideo(module.youtubeUrl)
+    if (!video) {
+      updateModule(moduleIndex, 'recordedVideoError', 'Ingresa un enlace válido de YouTube.')
+      return
+    }
+
+    module.recordedVideos.forEach((existingVideo) => {
+      if (existingVideo.type === 'file') {
+        URL.revokeObjectURL(existingVideo.previewUrl)
+        recordedVideoPreviewUrlsRef.current.delete(existingVideo.previewUrl)
+      }
+    })
+    updateModule(moduleIndex, 'recordedVideos', [
+      { id: createRecordedVideoId(), type: 'youtube', ...video },
+    ])
+    updateModule(moduleIndex, 'youtubeUrl', '')
+    updateModule(moduleIndex, 'recordedVideoError', '')
+  }
+
+  const removeRecordedVideo = (moduleIndex, video) => {
+    if (video.type === 'file') {
+      URL.revokeObjectURL(video.previewUrl)
+      recordedVideoPreviewUrlsRef.current.delete(video.previewUrl)
+    }
+    updateModule(
+      moduleIndex,
+      'recordedVideos',
+      values.contentModules[moduleIndex].recordedVideos.filter(({ id }) => id !== video.id),
+    )
+  }
+
+  const setModuleVideoInputMode = (moduleIndex, mode) => {
+    updateModule(moduleIndex, 'recordedVideoInputMode', mode)
+    updateModule(moduleIndex, 'youtubeUrl', '')
+    updateModule(moduleIndex, 'recordedVideoError', '')
+  }
+
+  const removeModule = (moduleIndex) => {
+    values.contentModules[moduleIndex].recordedVideos.forEach((video) => {
+      if (video.type === 'file') {
+        URL.revokeObjectURL(video.previewUrl)
+        recordedVideoPreviewUrlsRef.current.delete(video.previewUrl)
+      }
+    })
+    setValues((current) => ({
+      ...current,
+      contentModules: current.contentModules.filter((_, index) => index !== moduleIndex),
+    }))
+  }
+
   const handleSubmit = async (event) => {
     event.preventDefault()
     if (savingRef.current) return
@@ -632,6 +790,7 @@ function CourseFormModal({ course, onClose, onSaved }) {
               days: isRecordedModality ? '' : values.scheduleDays.trim(),
               startTime: isRecordedModality ? '' : values.scheduleStartTime.trim(),
               endTime: isRecordedModality ? '' : values.scheduleEndTime.trim(),
+              liveClassUrl: isLiveModality ? values.liveClassUrl.trim() : '',
               ...(isRecordedModality || isHybridModality
                 ? { recordedContentMinutes }
                 : {}),
@@ -658,6 +817,9 @@ function CourseFormModal({ course, onClose, onSaved }) {
           moduleNumber: index + 1,
           title: module.title.trim(),
           topics: module.topics.map((topic) => topic.trim()).filter(Boolean),
+          videoUrl: isRecordedModality && module.recordedVideos[0]?.type !== 'file'
+            ? module.recordedVideos[0]?.url ?? ''
+            : '',
         })),
       }
 
@@ -665,6 +827,12 @@ function CourseFormModal({ course, onClose, onSaved }) {
       formData.append('course', new Blob([JSON.stringify(payload)], { type: 'application/json' }))
       if (imageFile) formData.append('image', imageFile, imageFile.name)
       if (syllabusFile) formData.append('syllabus', syllabusFile, syllabusFile.name)
+      values.contentModules.forEach((module, index) => {
+        const video = module.recordedVideos[0]
+        if (isRecordedModality && video?.type === 'file') {
+          formData.append(`moduleVideo-${index + 1}`, video.file, video.file.name)
+        }
+      })
 
       if (isEditing) {
         const { data } = await api.put(`/courses/${course.id}`, formData)
@@ -1183,6 +1351,23 @@ function CourseFormModal({ course, onClose, onSaved }) {
                             />
                           </label>
                         </div>
+                        {isLiveModality && (
+                          <label className={`${labelClassName} block`} htmlFor="liveClassUrl">
+                            Enlace de la clase en vivo
+                            <input
+                              className={`${inputClassName} rounded-xl px-3.5 py-2.5`}
+                              id="liveClassUrl"
+                              name="liveClassUrl"
+                              onChange={updateValue}
+                              placeholder="https://meet.google.com/... o https://zoom.us/..."
+                              type="url"
+                              value={values.liveClassUrl}
+                            />
+                            <span className="mt-1 block text-xs font-normal text-slate-500">
+                              Puedes pegar un enlace de Meet, Zoom u otra plataforma.
+                            </span>
+                          </label>
+                        )}
                       </div>
                     </>
                   )}
@@ -1501,6 +1686,10 @@ function CourseFormModal({ course, onClose, onSaved }) {
                         {
                           title: '',
                           topics: [''],
+                          recordedVideos: [],
+                          youtubeUrl: '',
+                          recordedVideoError: '',
+                          recordedVideoInputMode: 'file',
                           isExpanded: true,
                         },
                       ],
@@ -1551,12 +1740,7 @@ function CourseFormModal({ course, onClose, onSaved }) {
                       <button
                         aria-label={`Eliminar módulo ${moduleIndex + 1}`}
                         className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                        onClick={() =>
-                          setValues((current) => ({
-                            ...current,
-                            contentModules: current.contentModules.filter((_, index) => index !== moduleIndex),
-                          }))
-                        }
+                        onClick={() => removeModule(moduleIndex)}
                         type="button"
                       >
                         <Trash2 size={17} />
@@ -1619,7 +1803,195 @@ function CourseFormModal({ course, onClose, onSaved }) {
                         </div>
                       ))}
                     </div>
-                      </div>
+                        {isRecordedModality && (
+                          <div className="space-y-4 border-t border-slate-100 pt-4">
+                            <div>
+                              <h4 className="text-sm font-semibold text-slate-900">
+                                Video del módulo {moduleIndex + 1}
+                              </h4>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Agrega el video de las clases de este módulo.
+                              </p>
+                            </div>
+                            <div>
+                              <p className="mb-2 text-sm font-medium text-slate-800">
+                                ¿Cómo quieres agregar el video?
+                              </p>
+                              <div
+                                aria-label={`Forma de agregar el video del módulo ${moduleIndex + 1}`}
+                                className="flex flex-wrap gap-2"
+                                role="group"
+                              >
+                                {[
+                                  { value: 'file', label: 'Subir video' },
+                                  { value: 'url', label: 'Colocar URL' },
+                                ].map(({ value, label }) => (
+                                  <button
+                                    aria-pressed={module.recordedVideoInputMode === value}
+                                    className={`rounded-lg border px-3.5 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      module.recordedVideoInputMode === value
+                                        ? 'border-blue-600 bg-blue-50 text-blue-700'
+                                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                    key={value}
+                                    disabled={
+                                      saving ||
+                                      (module.recordedVideos.length > 0 &&
+                                        module.recordedVideoInputMode !== value)
+                                    }
+                                    onClick={() => setModuleVideoInputMode(moduleIndex, value)}
+                                    type="button"
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {module.recordedVideoInputMode === 'file' ? (
+                              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                <input
+                                  accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov"
+                                  className="sr-only"
+                                  onChange={(event) => selectRecordedVideos(moduleIndex, event)}
+                                  ref={(element) => {
+                                    if (element) recordedVideoInputRefs.current.set(moduleIndex, element)
+                                    else recordedVideoInputRefs.current.delete(moduleIndex)
+                                  }}
+                                  type="file"
+                                />
+                                <button
+                                  className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:opacity-60"
+                                  disabled={saving}
+                                  onClick={() => recordedVideoInputRefs.current.get(moduleIndex)?.click()}
+                                  type="button"
+                                >
+                                  <UploadCloud aria-hidden="true" className="text-blue-600" size={17} />
+                                  Seleccionar videos
+                                </button>
+                                <p className="mt-2 text-xs text-slate-500">
+                                  Selecciona un archivo de video para este módulo.
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                <label
+                                  className={labelClassName}
+                                  htmlFor={`recordedYoutubeUrl-${moduleIndex}`}
+                                >
+                                  Enlace de YouTube
+                                  <span className="flex gap-2">
+                                    <input
+                                      className={`${inputClassName} min-w-0 flex-1 rounded-xl`}
+                                      id={`recordedYoutubeUrl-${moduleIndex}`}
+                                      onChange={(event) => {
+                                        updateModule(moduleIndex, 'youtubeUrl', event.target.value)
+                                        updateModule(moduleIndex, 'recordedVideoError', '')
+                                      }}
+                                      onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                          event.preventDefault()
+                                          addYouTubeVideo(moduleIndex)
+                                        }
+                                      }}
+                                      placeholder="https://youtube.com/watch?v=..."
+                                      type="url"
+                                      value={module.youtubeUrl}
+                                    />
+                                    <button
+                                      aria-label={`Agregar video de YouTube al módulo ${moduleIndex + 1}`}
+                                      className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white transition hover:bg-blue-700 disabled:opacity-60"
+                                      disabled={saving || !module.youtubeUrl.trim()}
+                                      onClick={() => addYouTubeVideo(moduleIndex)}
+                                      type="button"
+                                    >
+                                      <Plus aria-hidden="true" size={18} />
+                                    </button>
+                                  </span>
+                                </label>
+                              </div>
+                            )}
+                            {module.recordedVideoError && (
+                              <p className="text-sm text-red-600" role="alert">
+                                {module.recordedVideoError}
+                              </p>
+                            )}
+                            {module.recordedVideos.length > 0 && (
+                              <div
+                                aria-live="polite"
+                                className="grid gap-4 sm:grid-cols-2"
+                              >
+                                {module.recordedVideos.map((video) => (
+                                  <article
+                                    className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white"
+                                    key={video.id}
+                                  >
+                                    {video.type === 'youtube' ? (
+                                      <iframe
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                        allowFullScreen
+                                        className="aspect-video w-full bg-slate-100"
+                                        loading="lazy"
+                                        referrerPolicy="strict-origin-when-cross-origin"
+                                        src={video.embedUrl}
+                                        title={`Vista previa de video del módulo ${moduleIndex + 1}`}
+                                      />
+                                    ) : (
+                                      <video
+                                        className="aspect-video w-full bg-slate-100 object-contain"
+                                        controls
+                                        preload="metadata"
+                                        src={video.type === 'file' ? video.previewUrl : video.url}
+                                      >
+                                        Tu navegador no puede reproducir este video.
+                                      </video>
+                                    )}
+                                    <div className="flex min-w-0 items-center justify-between gap-3 p-3">
+                                      <div className="flex min-w-0 items-center gap-2">
+                                        <Video
+                                          aria-hidden="true"
+                                          className="shrink-0 text-blue-600"
+                                          size={17}
+                                        />
+                                        <span className="min-w-0">
+                                          <span className="block truncate text-xs font-semibold text-slate-800">
+                                            {video.type === 'youtube'
+                                              ? 'Video de YouTube'
+                                              : video.type === 'file'
+                                                ? video.file.name
+                                                : 'Video por URL'}
+                                          </span>
+                                          <span className="block text-xs text-slate-500">
+                                            {video.type === 'youtube'
+                                              ? 'Enlace agregado'
+                                              : video.type === 'file'
+                                                ? 'Archivo local · vista previa'
+                                                : 'Video cargado'}
+                                          </span>
+                                        </span>
+                                      </div>
+                                      <button
+                                        aria-label={`Quitar ${
+                                          video.type === 'youtube'
+                                            ? 'video de YouTube'
+                                            : video.type === 'file'
+                                              ? video.file.name
+                                              : 'video'
+                                        } del módulo ${moduleIndex + 1}`}
+                                        className="flex size-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-red-50 hover:text-red-600"
+                                        disabled={saving}
+                                        onClick={() => removeRecordedVideo(moduleIndex, video)}
+                                        type="button"
+                                      >
+                                        <Trash2 aria-hidden="true" size={16} />
+                                      </button>
+                                    </div>
+                                  </article>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        </div>
                     )}
                   </article>
                 ))}

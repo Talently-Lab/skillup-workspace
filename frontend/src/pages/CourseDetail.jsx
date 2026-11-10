@@ -61,6 +61,45 @@ function getInstructorName(instructor) {
   ].find((name) => typeof name === 'string' && name.trim()) ?? ''
 }
 
+function getLiveClassUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) return ''
+
+  try {
+    const url = new URL(value.trim())
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+function getYouTubeEmbedUrl(value) {
+  const safeUrl = getLiveClassUrl(value)
+  if (!safeUrl) return ''
+
+  try {
+    const url = new URL(safeUrl)
+    const host = url.hostname.toLowerCase()
+    const isYouTubeHost =
+      host === 'youtu.be' ||
+      host === 'youtube.com' ||
+      host.endsWith('.youtube.com') ||
+      host === 'youtube-nocookie.com' ||
+      host.endsWith('.youtube-nocookie.com')
+    if (!isYouTubeHost) return ''
+
+    const videoId =
+      host === 'youtu.be'
+        ? url.pathname.split('/').filter(Boolean)[0]
+        : url.searchParams.get('v') ??
+          url.pathname.match(/^\/(?:embed|shorts|live)\/([^/?]+)/)?.[1]
+    return videoId && /^[\w-]{11}$/.test(videoId)
+      ? `https://www.youtube-nocookie.com/embed/${videoId}`
+      : ''
+  } catch {
+    return ''
+  }
+}
+
 export default function CourseDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -103,6 +142,7 @@ export default function CourseDetail() {
   const course = loading ? null : courseResult.course
   const error = loading ? '' : courseResult.error
   const courseId = course?.id
+  const liveClassUrl = getLiveClassUrl(course?.schedule?.liveClassUrl)
 
   useEffect(() => {
     if (!courseId || !isAuthenticated || user?.role !== 'ALUMNO') return undefined
@@ -375,13 +415,25 @@ export default function CourseDetail() {
 
           <div className="mt-4 flex w-full flex-wrap items-center gap-3">
             {isEnrolled && (
-              <button
-                className="min-h-10 rounded-button bg-primary px-6 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover"
-                onClick={() => setShowCourseComingSoon(true)}
-                type="button"
-              >
-                Ir al curso
-              </button>
+              <>
+                <button
+                  className="min-h-10 rounded-button bg-primary px-6 py-2 text-sm font-semibold text-white transition hover:bg-primary-hover"
+                  onClick={() => setShowCourseComingSoon(true)}
+                  type="button"
+                >
+                  Ir al curso
+                </button>
+                {liveClassUrl && (
+                  <a
+                    className="inline-flex min-h-10 items-center rounded-button border border-primary px-5 py-2 text-sm font-semibold text-primary transition hover:bg-blue-50"
+                    href={liveClassUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Abrir enlace de la clase
+                  </a>
+                )}
+              </>
             )}
             {!isEnrolled && !checkingEnrollment && (
               <button
@@ -549,6 +601,30 @@ export default function CourseDetail() {
                     <h3 className="border-b border-border bg-slate-50 px-4 py-3 text-sm font-semibold text-ink">
                       Módulo {module.moduleNumber ?? index + 1}: {module.title}
                     </h3>
+                    {getLiveClassUrl(module.videoUrl) && (
+                      <div className="border-b border-border p-4">
+                        {getYouTubeEmbedUrl(module.videoUrl) ? (
+                          <iframe
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                            className="aspect-video w-full rounded-lg bg-slate-100"
+                            loading="lazy"
+                            referrerPolicy="strict-origin-when-cross-origin"
+                            src={getYouTubeEmbedUrl(module.videoUrl)}
+                            title={`Video del módulo ${module.moduleNumber ?? index + 1}`}
+                          />
+                        ) : (
+                          <video
+                            className="aspect-video w-full rounded-lg bg-slate-100 object-contain"
+                            controls
+                            preload="metadata"
+                            src={getLiveClassUrl(module.videoUrl)}
+                          >
+                            Tu navegador no puede reproducir este video.
+                          </video>
+                        )}
+                      </div>
+                    )}
                     {Array.isArray(module.topics) && module.topics.length > 0 && (
                       <ul className="space-y-2 px-5 py-4">
                         {module.topics.map((topic, topicIndex) => (
