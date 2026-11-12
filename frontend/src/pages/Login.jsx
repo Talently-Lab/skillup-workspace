@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import AuthLayout from '../components/layout/AuthLayout'
 import Input from '../components/ui/Input'
-import Checkbox from '../components/ui/Checkbox'
 import Button from '../components/ui/Button'
 import { useAuth } from '../context/useAuth'
 import { validateLogin } from '../utils/validators'
@@ -19,7 +18,6 @@ export default function Login() {
   const pendingCourse = location.state?.pendingEnrollment?.course
 
   const [form, setForm] = useState({ email: '', password: '' })
-  const [remember, setRemember] = useState(false)
   const [errors, setErrors] = useState({})
   const [serverError, setServerError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -40,7 +38,7 @@ export default function Login() {
 
     setLoading(true)
     try {
-      const user = await login(form, remember)
+      const user = await login(form)
       if (pendingCourseId) {
         try {
           await enrollInCourse(pendingCourseId)
@@ -124,15 +122,6 @@ export default function Login() {
           onChange={handleChange}
           error={errors.password}
         />
-
-        <div className="flex items-center justify-between">
-          <Checkbox
-            label="Recordarme"
-            checked={remember}
-            onChange={(event) => setRemember(event.target.checked)}
-          />
-          <span className="text-xs text-primary underline">¿Olvidaste tu contraseña?</span>
-        </div>
 
         {serverError && (
           <p role="alert" className="rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger">

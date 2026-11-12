@@ -17,11 +17,6 @@ function getDurationValue(course) {
   return `${course.durationWeeks ?? ''}|${course.durationHours ?? ''}`
 }
 
-function getCreatedAtTimestamp(course) {
-  const timestamp = Date.parse(course.createdAt ?? '')
-  return Number.isNaN(timestamp) ? 0 : timestamp
-}
-
 function getDurationLabel(course) {
   const values = []
   if (course.durationWeeks) {
@@ -52,24 +47,6 @@ function FilterSelect({ label, value, options, onChange }) {
       </select>
       <ChevronDown aria-hidden="true" className="pointer-events-none shrink-0 text-slate-500" size={14} />
     </label>
-  )
-}
-
-function RankingButton({ label, selected, onClick, title }) {
-  return (
-    <button
-      aria-pressed={selected}
-      className={`inline-flex h-10 shrink-0 items-center rounded-md border px-3 text-xs transition ${
-        selected
-          ? 'border-primary bg-primary text-white'
-          : 'border-slate-300 bg-white text-slate-700 hover:border-blue-300 hover:text-primary'
-      }`}
-      onClick={onClick}
-      title={title}
-      type="button"
-    >
-      {label}
-    </button>
   )
 }
 
@@ -128,7 +105,6 @@ export default function CourseCatalog() {
   const [category, setCategory] = useState('')
   const [level, setLevel] = useState('')
   const [duration, setDuration] = useState('')
-  const [rankingMode, setRankingMode] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
@@ -174,31 +150,14 @@ export default function CourseCatalog() {
 
   const filteredCourses = useMemo(() => {
     const normalizedSearch = normalizeText(search)
-    const matches = courses.filter((course) => {
+    return courses.filter((course) => {
       if (normalizedSearch && !normalizeText(course.title).includes(normalizedSearch)) return false
       if (category && course.category !== category) return false
       if (level && course.level !== level) return false
       if (duration && getDurationValue(course) !== duration) return false
       return true
     })
-
-    if (rankingMode === 'featured') {
-      return [...matches]
-        .sort((left, right) => (
-          (right.activeEnrollmentCount ?? 0) - (left.activeEnrollmentCount ?? 0) ||
-          getCreatedAtTimestamp(right) - getCreatedAtTimestamp(left)
-        ))
-        .slice(0, 4)
-    }
-
-    if (rankingMode === 'newest') {
-      return [...matches].sort((left, right) => (
-        getCreatedAtTimestamp(right) - getCreatedAtTimestamp(left)
-      ))
-    }
-
-    return matches
-  }, [courses, search, category, level, duration, rankingMode])
+  }, [courses, search, category, level, duration])
 
   const totalPages = Math.max(1, Math.ceil(filteredCourses.length / PAGE_SIZE))
   const visibleCourses = filteredCourses.slice(
@@ -211,17 +170,8 @@ export default function CourseCatalog() {
     setCurrentPage(1)
   }
 
-  const toggleRanking = (mode) => {
-    setRankingMode((currentMode) => currentMode === mode ? null : mode)
-    setCurrentPage(1)
-  }
-
   const activeFilters = [
     ...(search ? [{ label: `Búsqueda: ${search}`, clear: () => setSearch('') }] : []),
-    ...(rankingMode ? [{
-      label: rankingMode === 'featured' ? 'Destacados' : 'Nuevos',
-      clear: () => setRankingMode(null),
-    }] : []),
     ...(category ? [{
       label: `Categoría: ${categories.find((option) => option.value === category)?.label ?? category}`,
       clear: () => setCategory(''),
@@ -241,7 +191,6 @@ export default function CourseCatalog() {
     setCategory('')
     setLevel('')
     setDuration('')
-    setRankingMode(null)
     setCurrentPage(1)
   }
 
@@ -279,18 +228,6 @@ export default function CourseCatalog() {
         </div>
 
         <div aria-label="Filtros de cursos" className="flex min-w-0 gap-2 overflow-x-auto pb-1 lg:shrink-0 lg:overflow-visible lg:pb-0">
-          <RankingButton
-            label="Destacados"
-            onClick={() => toggleRanking('featured')}
-            selected={rankingMode === 'featured'}
-            title="Mostrar los 4 cursos con más inscripciones activas"
-          />
-          <RankingButton
-            label="Nuevos"
-            onClick={() => toggleRanking('newest')}
-            selected={rankingMode === 'newest'}
-            title="Ordenar por fecha de creación o publicación más reciente"
-          />
           <FilterSelect
             label="Categorías"
             onChange={updateFilter(setCategory)}
