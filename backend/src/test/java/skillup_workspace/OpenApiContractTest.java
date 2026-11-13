@@ -88,6 +88,33 @@ class OpenApiContractTest {
     }
 
     @Test
+    void courseMultipartSchemaRequiresCourseAndKeepsFilesOptional() {
+        Map<String, Schema> schemas = ModelConverters.getInstance().read(CourseMultipartRequestDTO.class);
+        Schema<?> multipartSchema = schemas.get("CourseMultipartRequest");
+
+        assertNotNull(multipartSchema);
+        assertNotNull(multipartSchema.getRequired());
+        assertTrue(multipartSchema.getRequired().contains("course"));
+        assertTrue(multipartSchema.getProperties().containsKey("image"));
+        assertTrue(multipartSchema.getProperties().containsKey("syllabus"));
+        assertTrue(!multipartSchema.getRequired().contains("image"));
+        assertTrue(!multipartSchema.getRequired().contains("syllabus"));
+    }
+
+    @Test
+    void courseCreationDocumentsBadRequestForMissingRequiredParts() throws NoSuchMethodException {
+        Method create = CourseController.class.getMethod(
+                "createCourse", Part.class, MultipartFile.class, MultipartFile.class, Map.class
+        );
+        ApiResponses responses = create.getAnnotation(ApiResponses.class);
+        Map<String, ApiResponse> responsesByCode = Arrays.stream(responses.value())
+                .collect(Collectors.toMap(ApiResponse::responseCode, response -> response));
+
+        assertTrue(responsesByCode.containsKey("400"));
+        assertTrue(responsesByCode.get("400").description().contains("partes obligatorias ausentes"));
+    }
+
+    @Test
     void registrationDocumentsConflictForDuplicateEmail() throws NoSuchMethodException {
         Method register = AuthController.class.getMethod("register", RegisterRequest.class);
         ApiResponses responses = register.getAnnotation(ApiResponses.class);

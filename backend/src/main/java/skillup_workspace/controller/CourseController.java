@@ -171,7 +171,7 @@ public class CourseController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "Datos inválidos o se envió un video por archivo/URL para un curso EN VIVO",
+                    description = "Datos inválidos, partes obligatorias ausentes o se envió un video por archivo/URL para un curso EN VIVO",
                     content = @Content
             ),
             @ApiResponse(
@@ -199,6 +199,7 @@ public class CourseController {
     public ResponseEntity<CourseDetailResponseDTO> createCourse(
             @Parameter(
                     description = "Datos del curso en JSON",
+                    required = true,
                     content = @Content(schema = @Schema(implementation = CourseRequestDTO.class))
             )
             @RequestPart("course") Part coursePart,
@@ -314,7 +315,7 @@ public class CourseController {
             ),
             @ApiResponse(
                     responseCode = "400",
-                    description = "Datos inválidos o se envió un video por archivo/URL para un curso EN VIVO",
+                    description = "Datos inválidos, partes obligatorias ausentes o se envió un video por archivo/URL para un curso EN VIVO",
                     content = @Content
             ),
             @ApiResponse(
@@ -349,6 +350,7 @@ public class CourseController {
             @PathVariable Long id,
             @Parameter(
                     description = "Datos del curso en JSON",
+                    required = true,
                     content = @Content(schema = @Schema(implementation = CourseRequestDTO.class))
             )
             @RequestPart("course") Part coursePart,
