@@ -316,6 +316,70 @@ class SecurityAuthorizationHttpTest {
         assertTrue(response.body().contains("\"status\":404"));
     }
 
+    @Test
+    void postCourseWithoutTokenReturns401JsonOverHttp() throws Exception {
+        HttpResponse<String> response = postCourse(null, "");
+
+        assertEquals(401, response.statusCode());
+        assertTrue(response.headers().firstValue("Content-Type").orElse("").startsWith("application/json"));
+        assertTrue(response.body().contains("\"status\":401"));
+        assertTrue(response.body().contains("No autorizado"));
+        verifyNoInteractions(courseService);
+    }
+
+    @Test
+    void postCourseWithStudentTokenReturns403WithoutErrorDispatchOverHttp() throws Exception {
+        User student = user("student@example.com", "ALUMNO");
+        given(jwtService.extractUsername("student-token")).willReturn(student.getEmail());
+        given(userRepository.findByEmail(student.getEmail())).willReturn(Optional.of(student));
+        given(jwtService.isTokenValid("student-token", student)).willReturn(true);
+
+        HttpResponse<String> response = postCourse("student-token", "");
+
+        assertEquals(403, response.statusCode());
+        verifyNoInteractions(courseService);
+    }
+
+    @Test
+    void postCourseWithAdminTokenAndMissingCoursePartReturns400OverHttp() throws Exception {
+        User admin = user("admin@example.com", "ADMIN");
+        given(jwtService.extractUsername("admin-token")).willReturn(admin.getEmail());
+        given(userRepository.findByEmail(admin.getEmail())).willReturn(Optional.of(admin));
+        given(jwtService.isTokenValid("admin-token", admin)).willReturn(true);
+
+        String boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+        String body = "--" + boundary + "--\r\n";
+        HttpResponse<String> response = postMultipartCourse("admin-token", boundary, body);
+
+        assertEquals(400, response.statusCode());
+        assertTrue(response.body().contains("\"status\":400"));
+        assertTrue(response.body().contains("\"error\":\"Bad Request\""));
+        assertTrue(response.body().contains("La parte multipart obligatoria 'course' no está presente."));
+        verifyNoInteractions(courseService);
+    }
+
+    private HttpResponse<String> postCourse(String token, String body) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/courses"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return HTTP_CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postMultipartCourse(String token, String boundary, String body) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/courses"))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return HTTP_CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
     private HttpResponse<String> deleteCourse(String token) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + "/api/v1/courses/2"))

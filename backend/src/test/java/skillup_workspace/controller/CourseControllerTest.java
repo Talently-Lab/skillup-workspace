@@ -216,6 +216,85 @@ class CourseControllerTest {
     }
 
     @Test
+    @DisplayName("POST /api/v1/courses - Debería retornar 400 si falta la parte obligatoria course sin archivos")
+    void createCourse_ShouldReturnBadRequestWhenCoursePartIsMissing() throws Exception {
+        mockMvc.perform(multipart("/api/v1/courses"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.message").value("La parte multipart obligatoria 'course' no está presente."));
+
+        Mockito.verify(courseService, Mockito.never()).createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/courses - Debería retornar 400 si falta course pero se incluye image")
+    void createCourse_ShouldReturnBadRequestWhenCoursePartIsMissingWithImage() throws Exception {
+        MockMultipartFile image = new MockMultipartFile(
+                "image", "cover.webp", "image/webp", new byte[]{1, 2, 3}
+        );
+
+        mockMvc.perform(multipart("/api/v1/courses").file(image))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.message").value("La parte multipart obligatoria 'course' no está presente."));
+
+        Mockito.verify(courseService, Mockito.never()).createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/courses - Debería retornar 400 si falta course pero se incluye syllabus")
+    void createCourse_ShouldReturnBadRequestWhenCoursePartIsMissingWithSyllabus() throws Exception {
+        MockMultipartFile syllabus = new MockMultipartFile(
+                "syllabus", "program.pdf", "application/pdf", new byte[]{4, 5, 6}
+        );
+
+        mockMvc.perform(multipart("/api/v1/courses").file(syllabus))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.message").value("La parte multipart obligatoria 'course' no está presente."));
+
+        Mockito.verify(courseService, Mockito.never()).createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/courses - Debería retornar 400 si falta course pero se incluyen ambos archivos")
+    void createCourse_ShouldReturnBadRequestWhenCoursePartIsMissingWithBothFiles() throws Exception {
+        MockMultipartFile image = new MockMultipartFile(
+                "image", "cover.webp", "image/webp", new byte[]{1, 2, 3}
+        );
+        MockMultipartFile syllabus = new MockMultipartFile(
+                "syllabus", "program.pdf", "application/pdf", new byte[]{4, 5, 6}
+        );
+
+        mockMvc.perform(multipart("/api/v1/courses").file(image).file(syllabus))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("Bad Request"))
+                .andExpect(jsonPath("$.message").value("La parte multipart obligatoria 'course' no está presente."));
+
+        Mockito.verify(courseService, Mockito.never()).createCourse(
+                any(CourseRequestDTO.class),
+                nullable(MultipartFile.class),
+                nullable(MultipartFile.class)
+        );
+    }
+
+    @Test
     @DisplayName("POST /api/v1/courses - Debería entregar los archivos opcionales al servicio")
     void createCourse_ShouldPassOptionalFilesToService() throws Exception {
         MockMultipartFile image = new MockMultipartFile(
