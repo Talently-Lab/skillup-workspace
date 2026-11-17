@@ -8,7 +8,7 @@ import Button from '../ui/Button'
 const links = [
   { to: '/cursos', label: 'Cursos', available: true },
   { to: '/nosotros', label: 'Nosotros', available: true },
-  { label: 'Blog', available: false },
+  /*{ label: 'Blog', available: false },*/
 ]
 
 export default function Navbar({ menuOpen = false, onMenuToggle, sticky = false }) {
