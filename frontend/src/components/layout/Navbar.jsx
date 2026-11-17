@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Menu, UserRound, X } from 'lucide-react'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/useAuth'
 import { getHomeForRole } from '../../utils/roles'
 import Button from '../ui/Button'
@@ -14,6 +14,7 @@ const links = [
 export default function Navbar({ menuOpen = false, onMenuToggle, sticky = false }) {
   const { user, isAuthenticated, logout } = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
   const isHomePage = location.pathname === '/'
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -26,10 +27,13 @@ export default function Navbar({ menuOpen = false, onMenuToggle, sticky = false 
     .toUpperCase() || user?.email?.[0]?.toUpperCase()
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ')
 
-  useEffect(() => {
+  const locationKey = `${location.pathname}${location.search}${location.hash}`
+  const [prevLocationKey, setPrevLocationKey] = useState(locationKey)
+      if (locationKey !== prevLocationKey) {
+    setPrevLocationKey(locationKey)
     setMobileMenuOpen(false)
     setAccountMenuOpen(false)
-  }, [location.pathname, location.search, location.hash])
+  }
 
   useEffect(() => {
     if (!mobileMenuOpen) return undefined
@@ -178,7 +182,7 @@ export default function Navbar({ menuOpen = false, onMenuToggle, sticky = false 
                     onClick={() => {
                       setAccountMenuOpen(false)
                       logout()
-                      window.location.replace('/')
+                      navigate('/', { replace: true })
                     }}
                     role="menuitem"
                     type="button"
