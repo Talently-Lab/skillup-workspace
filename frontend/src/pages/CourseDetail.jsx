@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Clock3, Download, Heart, Radio, Signal, Video, X } from 'lucide-react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import {
   addCourseFavorite,
@@ -106,7 +106,10 @@ export default function CourseDetail() {
   const location = useLocation()
   const { isAuthenticated, user } = useAuth()
   const [courseResult, setCourseResult] = useState({ id: null, course: null, error: '' })
-  const [activeTab, setActiveTab] = useState('description')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const activeTab = COURSE_TABS.some((tab) => tab.id === tabParam) ? tabParam : 'description'
+
   const [enrolling, setEnrolling] = useState(false)
   const [showCourseComingSoon, setShowCourseComingSoon] = useState(false)
   const [enrollmentStatus, setEnrollmentStatus] = useState({
@@ -525,7 +528,7 @@ export default function CourseDetail() {
               }`}
               id={`course-tab-${tabId}`}
               key={tabId}
-              onClick={() => setActiveTab(tabId)}
+              onClick={() => setSearchParams({ tab: tabId })}
               role="tab"
               type="button"
             >
