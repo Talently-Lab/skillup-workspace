@@ -444,6 +444,7 @@ function CourseFormModal({ course, onClose, onSaved }) {
 
   const updateValue = (event) => {
     const { name, value } = event.target
+    if (name === 'summary') event.target.setCustomValidity('')
     setValues((current) => ({ ...current, [name]: value }))
     if (name === 'scheduleDays') setSelectedDays(getSelectedDays(value))
   }
@@ -694,6 +695,14 @@ function CourseFormModal({ course, onClose, onSaved }) {
   const handleSubmit = async (event) => {
     event.preventDefault()
     if (savingRef.current) return
+    const summaryField = formScrollRef.current?.querySelector('#summary')
+    if (values.summary.length > 180) {
+      summaryField?.setCustomValidity('El resumen no puede superar los 180 caracteres.')
+      summaryField?.reportValidity()
+      setError('El resumen no puede superar los 180 caracteres.')
+      return
+    }
+    summaryField?.setCustomValidity('')
     const createAsDraft =
       !isEditing && event.nativeEvent.submitter?.value === 'BORRADOR'
     const invalidField = formScrollRef.current?.querySelector(':invalid')
@@ -1139,14 +1148,19 @@ function CourseFormModal({ course, onClose, onSaved }) {
                     Aparecerá en la tarjeta del catálogo y resultados de búsqueda.
                   </span>
                   <textarea
+                    aria-describedby="summary-character-count"
                     className={`${inputClassName} min-h-20 rounded-xl px-3.5 py-2.5`}
                     id="summary"
+                    maxLength={180}
                     name="summary"
                     onChange={updateValue}
                     required
                     rows={2}
                     value={values.summary}
                   />
+                  <span aria-live="polite" className="sr-only" id="summary-character-count">
+                    {values.summary.length} / 180 caracteres
+                  </span>
                 </label>
                 <label className={`${labelClassName} md:col-span-2`} htmlFor="description">
                   <span className="flex items-center justify-between gap-3">
