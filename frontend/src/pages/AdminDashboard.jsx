@@ -676,9 +676,6 @@ export default function AdminDashboard() {
           >
             <div className="flex flex-col gap-1 border-b border-border px-5 py-4 sm:px-6">
               <h2 className="text-lg font-bold">Usuarios</h2>
-              <p className="text-xs text-muted">
-                El estado de la cuenta no está disponible en los datos actuales.
-              </p>
             </div>
             <div
               aria-label="Tabla de usuarios; desplázate horizontalmente para ver todas las columnas"
@@ -692,19 +689,18 @@ export default function AdminDashboard() {
                     <th className="px-5 py-3.5 font-semibold sm:px-6" scope="col">Nombre</th>
                     <th className="px-5 py-3.5 font-semibold sm:px-6" scope="col">Email</th>
                     <th className="px-5 py-3.5 font-semibold sm:px-6" scope="col">Rol</th>
-                    <th className="px-5 py-3.5 font-semibold sm:px-6" scope="col">Estado</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadingUsers ? (
                     <tr>
-                      <td className="px-5 py-8 text-center text-sm text-muted sm:px-6" colSpan="4">
+                      <td className="px-5 py-8 text-center text-sm text-muted sm:px-6" colSpan="3">
                         Cargando usuarios...
                       </td>
                     </tr>
                   ) : usersError ? (
                     <tr>
-                      <td className="px-5 py-8 text-center sm:px-6" colSpan="4">
+                      <td className="px-5 py-8 text-center sm:px-6" colSpan="3">
                         <p className="text-sm text-danger" role="alert">
                           No se pudieron cargar los usuarios: {usersError}
                         </p>
@@ -728,16 +724,11 @@ export default function AdminDashboard() {
                         <td className="px-5 py-4 text-muted sm:px-6">
                           {listedUser.role || 'Sin rol'}
                         </td>
-                        <td className="px-5 py-4 sm:px-6">
-                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">
-                            No registrado
-                          </span>
-                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td className="px-5 py-8 text-center text-sm text-muted sm:px-6" colSpan="4">
+                      <td className="px-5 py-8 text-center text-sm text-muted sm:px-6" colSpan="3">
                         Todavía no hay usuarios para mostrar.
                       </td>
                     </tr>

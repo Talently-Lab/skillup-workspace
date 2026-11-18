@@ -29,7 +29,7 @@ Aplicacion frontend de SkillUp Campus creada con React + Vite usando JavaScript.
    `http://localhost:8080/api/v1`.
 
    En Netlify, configurar `VITE_API_BASE_URL` con
-   `https://skillup-workspace.onrender.com/api/v1` en las variables de entorno
+   `https://main-skillup-backend-yusleidys-workspace.light-cloud.io/api/v1` en las variables de entorno
    del sitio y volver a desplegar.
 
 ## Comandos

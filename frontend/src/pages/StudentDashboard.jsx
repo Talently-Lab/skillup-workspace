@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import StudentCourseTabs from '../components/student/StudentCourseTabs'
 import StudentEnrollmentCard from '../components/student/StudentEnrollmentCard'
 import StudentSidebar from '../components/student/StudentSidebar'
@@ -11,7 +11,11 @@ import { getCourses, getMyEnrollments } from '../services/courseService'
 export default function StudentDashboard() {
   const { user, isAuthenticated } = useAuth()
   const [activeItem, setActiveItem] = useState('progress')
-  const [activeCourseTab, setActiveCourseTab] = useState('ACTIVE')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeCourseTab = searchParams.get('estado') === 'finalizados' ? 'COMPLETED' : 'ACTIVE'
+  const handleCourseTabChange = (tab) => {
+   setSearchParams(tab === 'COMPLETED' ? { estado: 'finalizados' } : {})
+  }
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [enrollments, setEnrollments] = useState([])
   const [enrollmentsLoading, setEnrollmentsLoading] = useState(true)
@@ -115,7 +119,7 @@ export default function StudentDashboard() {
               Mis cursos
             </h2>
             <div className="mt-3">
-              <StudentCourseTabs activeTab={activeCourseTab} onChange={setActiveCourseTab} />
+              <StudentCourseTabs activeTab={activeCourseTab} onChange={handleCourseTabChange} />
             </div>
             <div aria-live="polite" className="mt-4">
               {enrollmentsLoading ? (

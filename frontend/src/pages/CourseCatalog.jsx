@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import CourseCard from '../components/courses/CourseCard'
 import { getCourses } from '../services/courseService'
@@ -101,11 +102,24 @@ export default function CourseCatalog() {
   const [courses, setCourses] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
-  const [category, setCategory] = useState('')
-  const [level, setLevel] = useState('')
-  const [duration, setDuration] = useState('')
-  const [currentPage, setCurrentPage] = useState(1)
+  // Los filtros y la página viven en la URL (ej: /cursos?categoria=Diseño&pagina=2)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const search = searchParams.get('q') ?? ''
+  const category = searchParams.get('categoria') ?? ''
+  const level = searchParams.get('nivel') ?? ''
+  const duration = searchParams.get('duracion') ?? ''
+  const requestedPage = Number.parseInt(searchParams.get('pagina'), 10) || 1
+
+  const updateParams = (changes, { replace = false } = {}) => {
+    const next = new URLSearchParams(searchParams)
+    Object.entries(changes).forEach(([key, value]) => {
+      if (value) next.set(key, value)
+      else next.delete(key)
+    })
+    setSearchParams(next, { replace })
+  }
+
+
 
   useEffect(() => {
     let active = true
@@ -160,38 +174,39 @@ export default function CourseCatalog() {
   }, [courses, search, category, level, duration])
 
   const totalPages = Math.max(1, Math.ceil(filteredCourses.length / PAGE_SIZE))
+  const currentPage = Math.min(Math.max(1, requestedPage), totalPages)
   const visibleCourses = filteredCourses.slice(
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   )
 
-  const updateFilter = (setter) => (value) => {
-    setter(value)
-    setCurrentPage(1)
-  }
+  useEffect(() => {
+     window.scrollTo({ top: 0 })
+  }, [currentPage])
 
-  const activeFilters = [
-    ...(search ? [{ label: `Búsqueda: ${search}`, clear: () => setSearch('') }] : []),
+  const updateFilter = (key, options) => (value) =>
+       updateParams({ [key]: value, pagina: '' }, options)
+
+  const goToPage = (page) => updateParams({ pagina: page > 1 ? String(page) : '' })
+
+    const activeFilters = [
+    ...(search ? [{ label: `Búsqueda: ${search}`, clear: () => updateFilter('q')('') }] : []),
     ...(category ? [{
       label: `Categoría: ${categories.find((option) => option.value === category)?.label ?? category}`,
-      clear: () => setCategory(''),
+      clear: () => updateFilter('categoria')(''),
     }] : []),
     ...(level ? [{
       label: `Nivel: ${levels.find((option) => option.value === level)?.label ?? level}`,
-      clear: () => setLevel(''),
+      clear: () => updateFilter('nivel')(''),
     }] : []),
     ...(duration ? [{
       label: `Duración: ${durations.find((option) => option.value === duration)?.label ?? duration}`,
-      clear: () => setDuration(''),
+      clear: () => updateFilter('duracion')(''),
     }] : []),
   ]
 
   const clearAllFilters = () => {
-    setSearch('')
-    setCategory('')
-    setLevel('')
-    setDuration('')
-    setCurrentPage(1)
+    updateParams({ q: '', categoria: '', nivel: '', duracion: '', pagina: '' })
   }
 
   return (
@@ -209,7 +224,7 @@ export default function CourseCatalog() {
           <input
             className="h-10 w-full rounded-md border border-slate-300 bg-white pl-10 pr-10 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/10 [&::-webkit-search-cancel-button]:hidden"
             id="course-search"
-            onChange={(event) => updateFilter(setSearch)(event.target.value)}
+            onChange={(event) => updateFilter('q', { replace: true })(event.target.value)}
             placeholder="Buscar cursos"
             type="search"
             value={search}
@@ -218,7 +233,7 @@ export default function CourseCatalog() {
             <button
               aria-label="Limpiar búsqueda"
               className="absolute right-1 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
-              onClick={() => updateFilter(setSearch)('')}
+              onClick={() => updateFilter('q')('')}
               title="Limpiar búsqueda"
               type="button"
             >
@@ -230,19 +245,19 @@ export default function CourseCatalog() {
         <div aria-label="Filtros de cursos" className="flex min-w-0 gap-2 overflow-x-auto pb-1 lg:shrink-0 lg:overflow-visible lg:pb-0">
           <FilterSelect
             label="Categorías"
-            onChange={updateFilter(setCategory)}
+            onChange={updateFilter('categoria')}
             options={categories}
             value={category}
           />
           <FilterSelect
             label="Nivel"
-            onChange={updateFilter(setLevel)}
+            onChange={updateFilter('nivel')}
             options={levels}
             value={level}
           />
           <FilterSelect
             label="Duración"
-            onChange={updateFilter(setDuration)}
+            onChange={updateFilter('duracion')}
             options={durations}
             value={duration}
           />
@@ -257,10 +272,7 @@ export default function CourseCatalog() {
               aria-label={`Quitar filtro ${label}`}
               className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-3.5 text-sm font-medium text-primary transition hover:border-blue-200 hover:bg-blue-100"
               key={label}
-              onClick={() => {
-                clear()
-                setCurrentPage(1)
-              }}
+              onClick={clear}
               type="button"
             >
               <span className="max-w-64 truncate">{label}</span>
@@ -293,7 +305,7 @@ export default function CourseCatalog() {
           </div>
           <Pagination
             currentPage={currentPage}
-            onPageChange={setCurrentPage}
+            onPageChange={goToPage}
             totalPages={totalPages}
           />
         </>
