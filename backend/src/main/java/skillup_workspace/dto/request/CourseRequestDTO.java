@@ -8,6 +8,7 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -72,6 +73,7 @@ public class CourseRequestDTO {
 
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     @NotBlank(message = "El campo summary es obligatorio")
+    @Size(max = 180, message = "El resumen no puede superar los 180 caracteres")
     private String summary;
 
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED)

@@ -7,11 +7,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import skillup_workspace.dto.response.ErrorResponse;
 
@@ -134,6 +136,21 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMediaTypeNotSupportedException(
+            HttpMediaTypeNotSupportedException ex,
+            jakarta.servlet.http.HttpServletRequest request) {
+        boolean emptyCourseCreation = "POST".equalsIgnoreCase(request.getMethod())
+                && "/api/v1/courses".equals(request.getRequestURI().substring(request.getContextPath().length()))
+                && request.getContentLengthLong() == 0;
+        HttpStatus status = emptyCourseCreation ? HttpStatus.BAD_REQUEST : HttpStatus.UNSUPPORTED_MEDIA_TYPE;
+        String message = emptyCourseCreation
+                ? "La solicitud debe incluir un formulario multipart con la parte obligatoria 'course'."
+                : "El tipo de contenido de la solicitud no está soportado.";
+        ErrorResponse error = new ErrorResponse(status.value(), status.getReasonPhrase(), message);
+        return new ResponseEntity<>(error, status);
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleMethodArgumentTypeMismatchException(
             MethodArgumentTypeMismatchException ex) {
@@ -152,6 +169,16 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST.value(),
                 HttpStatus.BAD_REQUEST.getReasonPhrase(),
                 "La parte multipart obligatoria '" + ex.getRequestPartName() + "' no está presente."
+        );
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ErrorResponse> handleMultipartException(MultipartException ex) {
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                "El formulario multipart es inválido o no contiene la parte obligatoria 'course'."
         );
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
