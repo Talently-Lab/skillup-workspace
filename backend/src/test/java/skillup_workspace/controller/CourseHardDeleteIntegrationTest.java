@@ -235,6 +235,121 @@ class CourseHardDeleteIntegrationTest {
     }
 
     @Test
+    void adminCreateCourseWithoutCoursePartReturnsControlledBadRequest() throws Exception {
+        String boundary = "SkillUpEmptyBoundary7MA4YWxkTrZu0gW";
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/courses"))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtService.generateToken(admin))
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.MULTIPART_FORM_DATA_VALUE + "; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(400, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"status\":400"), response.body());
+        assertTrue(response.body().contains("\"error\":\"Bad Request\""), response.body());
+        assertTrue(response.body().contains("'course'"), response.body());
+        assertEquals(0, courseRepository.count());
+    }
+
+    @Test
+    void adminCreateCourseWithMalformedMultipartReturnsControlledBadRequest() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/courses"))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtService.generateToken(admin))
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.MULTIPART_FORM_DATA_VALUE)
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(400, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"status\":400"), response.body());
+        assertTrue(response.body().contains("\"error\":\"Bad Request\""), response.body());
+        assertTrue(response.body().contains("multipart"), response.body());
+        assertEquals(0, courseRepository.count());
+    }
+
+    @Test
+    void adminCreateCourseWithEmptyBodyAndNoContentTypeReturnsControlledBadRequest() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/courses"))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtService.generateToken(admin))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(400, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"status\":400"), response.body());
+        assertTrue(response.body().contains("'course'"), response.body());
+        assertEquals(0, courseRepository.count());
+    }
+
+    @Test
+    void unsupportedCourseContentTypeReturnsUtf8ErrorMessage() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/courses"))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwtService.generateToken(admin))
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build();
+
+        HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(415, response.statusCode(), response.body());
+        assertTrue(response.body().contains("está soportado"), response.body());
+        assertFalse(response.body().contains("Ã"), response.body());
+    }
+
+    @Test
+    void adminCreateCourseEnforcesSummaryLimitOverRealHttpAndPersistence() throws Exception {
+        String token = jwtService.generateToken(admin);
+
+        HttpResponse<String> response179 = send(
+                HttpMethod.POST, "/api/v1/courses", token, courseRequest("a".repeat(179))
+        );
+        assertEquals(201, response179.statusCode(), response179.body());
+
+        HttpResponse<String> response180 = send(
+                HttpMethod.POST, "/api/v1/courses", token, courseRequest("b".repeat(180))
+        );
+        assertEquals(201, response180.statusCode(), response180.body());
+
+        HttpResponse<String> response181 = send(
+                HttpMethod.POST, "/api/v1/courses", token, courseRequest("c".repeat(181))
+        );
+        assertEquals(400, response181.statusCode(), response181.body());
+        assertEquals(2, courseRepository.count());
+        assertTrue(courseRepository.findAll().stream().allMatch(course -> course.getSummary().length() <= 180));
+    }
+
+    @Test
+    void adminUpdateCourseEnforcesSummaryLimitAndPreservesCourseAfterRejectedRequest() throws Exception {
+        Course course = saveCourse();
+        String token = jwtService.generateToken(admin);
+
+        HttpResponse<String> response180 = send(
+                HttpMethod.PUT,
+                "/api/v1/courses/" + course.getId(),
+                token,
+                courseRequest("b".repeat(180))
+        );
+        assertEquals(200, response180.statusCode(), response180.body());
+        assertEquals(180, courseRepository.findById(course.getId()).orElseThrow().getSummary().length());
+
+        HttpResponse<String> response181 = send(
+                HttpMethod.PUT,
+                "/api/v1/courses/" + course.getId(),
+                token,
+                courseRequest("c".repeat(181))
+        );
+        assertEquals(400, response181.statusCode(), response181.body());
+        assertEquals("b".repeat(180), courseRepository.findById(course.getId()).orElseThrow().getSummary());
+    }
+
+    @Test
     void studentCannotEditCourseAndGets403Json() throws Exception {
         Course course = saveCourse();
         HttpResponse<String> response = send(
@@ -501,6 +616,10 @@ class CourseHardDeleteIntegrationTest {
         course.setDurationHours(12);
         course.setDurationWeeks(3);
         return courseRepository.saveAndFlush(course);
+    }
+
+    private String courseRequest(String summary) {
+        return COURSE_REQUEST.replace("\"summary\": \"Resumen\"", "\"summary\": \"" + summary + "\"");
     }
 
     private User saveUser(String email, String role) {

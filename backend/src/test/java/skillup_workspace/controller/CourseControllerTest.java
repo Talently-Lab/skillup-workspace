@@ -147,6 +147,26 @@ class CourseControllerTest {
     }
 
     @Test
+    @DisplayName("POST /api/v1/courses - Acepta resumen de 180 caracteres y rechaza 181")
+    void createCourse_ShouldEnforceSummaryLength() throws Exception {
+        given(courseService.createCourse(
+                any(CourseRequestDTO.class), nullable(MultipartFile.class), nullable(MultipartFile.class)
+        )).willReturn(new CourseDetailResponseDTO());
+
+        CourseRequestDTO requestDTO = validCourseRequestDTO();
+        requestDTO.setSummary("a".repeat(180));
+        performCreate(objectMapper.writeValueAsString(requestDTO)).andExpect(status().isCreated());
+
+        requestDTO.setSummary("a".repeat(181));
+        performCreate(objectMapper.writeValueAsString(requestDTO))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+        Mockito.verify(courseService, Mockito.times(1)).createCourse(
+                any(CourseRequestDTO.class), nullable(MultipartFile.class), nullable(MultipartFile.class)
+        );
+    }
+
+    @Test
     @DisplayName("POST /api/v1/courses - Debería aceptar la creación como borrador")
     void createCourse_ShouldAcceptDraftStatus() throws Exception {
         given(courseService.createCourse(
@@ -609,6 +629,32 @@ class CourseControllerTest {
                             return request;
                         }))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("PUT /api/v1/courses/{id} - Acepta resumen de 180 caracteres y rechaza 181")
+    void updateCourse_ShouldEnforceSummaryLength() throws Exception {
+        Long courseId = 1L;
+        given(courseService.updateCourse(
+                eq(courseId), any(CourseRequestDTO.class), nullable(MultipartFile.class), nullable(MultipartFile.class)
+        )).willReturn(new CourseDetailResponseDTO());
+
+        CourseRequestDTO requestDTO = validCourseRequestDTO();
+        requestDTO.setSummary("a".repeat(180));
+        mockMvc.perform(multipart("/api/v1/courses/{id}", courseId)
+                        .part(coursePart(objectMapper.writeValueAsString(requestDTO)))
+                        .with(request -> { request.setMethod("PUT"); return request; }))
+                .andExpect(status().isOk());
+
+        requestDTO.setSummary("a".repeat(181));
+        mockMvc.perform(multipart("/api/v1/courses/{id}", courseId)
+                        .part(coursePart(objectMapper.writeValueAsString(requestDTO)))
+                        .with(request -> { request.setMethod("PUT"); return request; }))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+        Mockito.verify(courseService, Mockito.times(1)).updateCourse(
+                eq(courseId), any(CourseRequestDTO.class), nullable(MultipartFile.class), nullable(MultipartFile.class)
+        );
     }
 
     @Test
