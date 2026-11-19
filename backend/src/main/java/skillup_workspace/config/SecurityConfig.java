@@ -146,7 +146,11 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(List.of("https://skillup-workspace.pages.dev", "https://main-skillup-backend-yusleidys-workspace.light-cloud.io"));
+        configuration.setAllowedOrigins(List.of(
+                "http://localhost:5173",
+                "https://skillup-workspace.pages.dev",
+                "https://main-skillup-backend-yusleidys-workspace.light-cloud.io"
+        ));
 
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
