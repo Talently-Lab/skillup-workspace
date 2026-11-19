@@ -49,7 +49,7 @@ export default function AdminDashboardSummary({
           ? '!'
           : dashboardStats.completedCoursesAvailable
             ? dashboardStats.completedCourses
-            : 'No disponible',
+            : 0,
       icon: GraduationCap,
       detail: 'Cursos finalizados',
       iconStyle: 'bg-emerald-50 text-emerald-700',
