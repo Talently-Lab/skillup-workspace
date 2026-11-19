@@ -9,6 +9,7 @@ import { getAuthErrorMessage } from '../services/authService'
 import { getHomeForRole } from '../utils/roles'
 import { enrollInCourse } from '../services/courseService'
 import { getPendingCourseId, isAlreadyEnrolled } from '../utils/enrollmentErrors'
+import { EXPIRATION_NOTICE_KEY } from '../services/sessionEvents'
 
 export default function Login() {
   const { login } = useAuth()
@@ -21,6 +22,18 @@ export default function Login() {
   const [errors, setErrors] = useState({})
   const [serverError, setServerError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [sessionExpired] = useState(() => {
+    try {
+      const expired = sessionStorage.getItem(EXPIRATION_NOTICE_KEY) === '1'
+      if (expired) {
+        sessionStorage.removeItem(EXPIRATION_NOTICE_KEY)
+      }
+      return expired
+    } catch {
+      // Login remains available when browser storage is restricted.
+      return false
+    }
+  })
 
   const handleChange = (event) => {
     const { name, value } = event.target
@@ -97,6 +110,12 @@ export default function Login() {
       {location.state?.registered && (
         <p role="status" className="mt-4 rounded-xl bg-success/10 px-4 py-3 text-sm text-success">
           Tu cuenta se creó correctamente. Ya podés iniciar sesión.
+        </p>
+      )}
+
+      {sessionExpired && (
+        <p role="alert" className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Tu sesión expiró. Iniciá sesión nuevamente para continuar.
         </p>
       )}
 

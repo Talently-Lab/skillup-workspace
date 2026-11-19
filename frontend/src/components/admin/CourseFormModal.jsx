@@ -59,6 +59,28 @@ const CATEGORY_SUGGESTIONS = [
 ]
 const LEVEL_OPTIONS = ['Principiante', 'Intermedio', 'Avanzado']
 
+function RequiredIndicator() {
+  return (
+    <abbr
+      aria-label="Campo obligatorio"
+      className="group/required relative inline-flex cursor-help text-red-500 no-underline"
+    >
+      <span
+        aria-hidden="true"
+        className="inline-block px-0.5 text-lg font-bold leading-none transition-transform duration-150 ease-out group-hover/required:-translate-y-0.5 group-hover/required:scale-125 group-hover/required:rotate-6 motion-reduce:transition-none"
+      >
+        *
+      </span>
+      <span
+        className="pointer-events-none invisible absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 translate-y-1 scale-95 whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium text-white opacity-0 shadow-lg transition duration-150 ease-out group-hover/required:visible group-hover/required:translate-y-0 group-hover/required:scale-100 group-hover/required:opacity-100 motion-reduce:transition-none"
+        role="tooltip"
+      >
+        Campo obligatorio
+      </span>
+    </abbr>
+  )
+}
+
 function getSelectedDays(value) {
   const normalizeDay = (day) =>
     day
@@ -250,6 +272,7 @@ function CourseFormModal({ course, onClose, onSaved }) {
   const [activeFormSection, setActiveFormSection] = useState('general')
   const [showCloseConfirmation, setShowCloseConfirmation] = useState(false)
   const [error, setError] = useState('')
+  const [requiredFieldErrors, setRequiredFieldErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [saveStatus, setSaveStatus] = useState('')
   const [savedAsDraft, setSavedAsDraft] = useState(false)
@@ -446,7 +469,24 @@ function CourseFormModal({ course, onClose, onSaved }) {
     const { name, value } = event.target
     if (name === 'summary') event.target.setCustomValidity('')
     setValues((current) => ({ ...current, [name]: value }))
+    if (event.target.validity.valid) {
+      setRequiredFieldErrors((current) => {
+        if (!current[event.target.id]) return current
+        const next = { ...current }
+        delete next[event.target.id]
+        return next
+      })
+    }
     if (name === 'scheduleDays') setSelectedDays(getSelectedDays(value))
+  }
+
+  const clearRequiredFieldError = (fieldId) => {
+    setRequiredFieldErrors((current) => {
+      if (!current[fieldId]) return current
+      const next = { ...current }
+      delete next[fieldId]
+      return next
+    })
   }
 
   const toggleSelectedDay = (dayKey) => {
@@ -454,6 +494,7 @@ function CourseFormModal({ course, onClose, onSaved }) {
       ? selectedDays.filter((day) => day !== dayKey)
       : WEEK_DAYS.filter(({ key }) => selectedDays.includes(key) || key === dayKey).map(({ key }) => key)
     setSelectedDays(next)
+    if (next.length) clearRequiredFieldError('scheduleDays')
     setValues((currentValues) => ({
       ...currentValues,
       scheduleDays: formatSelectedDays(next),
@@ -707,9 +748,25 @@ function CourseFormModal({ course, onClose, onSaved }) {
       !isEditing && event.nativeEvent.submitter?.value === 'BORRADOR'
     const invalidField = formScrollRef.current?.querySelector(':invalid')
     if (invalidField) {
-      invalidField.reportValidity()
+      const invalidFields = [...(formScrollRef.current?.querySelectorAll(':invalid') ?? [])]
+      const invalidRequiredFields = invalidFields.filter((field) => field.required)
+      if (!invalidRequiredFields.length) {
+        invalidField.reportValidity()
+        return
+      }
+      setRequiredFieldErrors(Object.fromEntries(
+        invalidRequiredFields.map((field) => [
+          field.id,
+          field.validity.valueMissing
+            ? 'Completa este campo obligatorio.'
+            : 'Revisa el formato o el valor ingresado.',
+        ]),
+      ))
+      setError('')
+      invalidRequiredFields[0].focus()
       return
     }
+    setRequiredFieldErrors({})
     const customFields = ['type']
     const nextModalityErrors = Object.fromEntries(
       customFields
@@ -733,20 +790,37 @@ function CourseFormModal({ course, onClose, onSaved }) {
     }
     if (hasLiveSessions) {
       if (!selectedDays.length) {
-        setError('Selecciona al menos un día para las sesiones en vivo.')
+        setRequiredFieldErrors((current) => ({
+          ...current,
+          scheduleDays: 'Selecciona al menos un día para las sesiones en vivo.',
+        }))
+        setError('')
         return
       }
-      if (!values.scheduleStartTime || !values.scheduleEndTime || !sessionMinutes) {
-        setError('Indica una hora de finalización posterior a la hora de inicio.')
+      if (!sessionMinutes) {
+        setRequiredFieldErrors((current) => ({
+          ...current,
+          scheduleStartTime: 'Indica la hora de inicio de la sesión.',
+          scheduleEndTime: 'Debe ser posterior a la hora de inicio.',
+        }))
+        setError('')
         return
       }
     }
     if (isRecordedModality && recordedContentMinutes <= 0) {
-      setError('Indica una estimación positiva de horas o minutos de contenido.')
+      setRequiredFieldErrors((current) => ({
+        ...current,
+        recordedContentHours: 'Indica una duración de contenido mayor a cero.',
+      }))
+      setError('')
       return
     }
     if (isHybridModality && recordedContentMinutes <= 0) {
-      setError('Indica una estimación positiva de horas o minutos de contenido grabado.')
+      setRequiredFieldErrors((current) => ({
+        ...current,
+        recordedContentHours: 'Indica una duración de contenido grabado mayor a cero.',
+      }))
+      setError('')
       return
     }
     if (calculatedDurationMinutes <= 0) {
@@ -763,7 +837,12 @@ function CourseFormModal({ course, onClose, onSaved }) {
           index === invalidModuleIndex ? { ...module, isExpanded: true } : module,
         ),
       }))
-      setError(`Completa el título del módulo ${invalidModuleIndex + 1}.`)
+      setRequiredFieldErrors((current) => ({
+        ...current,
+        [`moduleTitle-${invalidModuleIndex}`]: 'Completa el título del módulo.',
+      }))
+      setError('')
+      navigateToFormSection('modules')
       return
     }
     if (imageError || syllabusError) {
@@ -869,6 +948,22 @@ function CourseFormModal({ course, onClose, onSaved }) {
   const inputClassName =
     'mt-1.5 w-full rounded-lg border border-border px-3 py-2.5 text-sm font-normal outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15'
   const labelClassName = 'block min-w-0 text-sm font-medium text-ink'
+  const fieldLabelClassName = (fieldId) =>
+    `${labelClassName} ${requiredFieldErrors[fieldId] ? 'text-red-600' : ''}`
+  const fieldInputClassName = (fieldId, additionalClasses = '') =>
+    `${inputClassName} ${requiredFieldErrors[fieldId] ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''} ${additionalClasses}`
+  const fieldValidationProps = (fieldId, existingDescriptionId) => ({
+    'aria-invalid': Boolean(requiredFieldErrors[fieldId]),
+    'aria-describedby': [
+      existingDescriptionId,
+      requiredFieldErrors[fieldId] ? `${fieldId}-error` : undefined,
+    ].filter(Boolean).join(' ') || undefined,
+  })
+  const renderFieldError = (fieldId) => requiredFieldErrors[fieldId] && (
+    <span className="mt-1 block text-xs font-medium text-red-600" id={`${fieldId}-error`} role="alert">
+      {requiredFieldErrors[fieldId]}
+    </span>
+  )
 
   return (
     <div
@@ -964,22 +1059,24 @@ function CourseFormModal({ course, onClose, onSaved }) {
                 </p>
               </div>
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                <label className={`${labelClassName} md:col-span-2`} htmlFor="title">
-                  Nombre del curso <span className="text-red-500">*</span>
+                <label className={`${fieldLabelClassName('title')} md:col-span-2`} htmlFor="title">
+                  Nombre del curso <RequiredIndicator />
                   <input
-                    className={`${inputClassName} rounded-xl px-3.5 py-2.5`}
+                    className={fieldInputClassName('title', 'rounded-xl px-3.5 py-2.5')}
                     id="title"
                     name="title"
                     onChange={updateValue}
                     placeholder="Ej. Diseño UX/UI Avanzado"
                     required
                     value={values.title}
+                    {...fieldValidationProps('title')}
                   />
+                  {renderFieldError('title')}
                 </label>
-                <label className={labelClassName} htmlFor="category">
-                  Categoría <span className="text-red-500">*</span>
+                <label className={fieldLabelClassName('category')} htmlFor="category">
+                  Categoría <RequiredIndicator />
                   <input
-                    className={`${inputClassName} rounded-xl px-3.5 py-2.5`}
+                    className={fieldInputClassName('category', 'rounded-xl px-3.5 py-2.5')}
                     id="category"
                     list="course-category-suggestions"
                     name="category"
@@ -987,20 +1084,23 @@ function CourseFormModal({ course, onClose, onSaved }) {
                     placeholder="Selecciona o escribe una categoría"
                     required
                     value={values.category}
+                    {...fieldValidationProps('category')}
                   />
+                  {renderFieldError('category')}
                   <datalist id="course-category-suggestions">
                     {CATEGORY_SUGGESTIONS.map((category) => <option key={category} value={category} />)}
                   </datalist>
                 </label>
-                <label className={labelClassName} htmlFor="level">
-                  Nivel del curso <span className="text-red-500">*</span>
+                <label className={fieldLabelClassName('level')} htmlFor="level">
+                  Nivel del curso <RequiredIndicator />
                   <select
-                    className={`${inputClassName} rounded-xl px-3.5 py-2.5`}
+                    className={fieldInputClassName('level', 'rounded-xl px-3.5 py-2.5')}
                     id="level"
                     name="level"
                     onChange={updateValue}
                     required
                     value={values.level}
+                    {...fieldValidationProps('level')}
                   >
                     <option value="">Selecciona el nivel</option>
                     {values.level && !LEVEL_OPTIONS.includes(values.level) && (
@@ -1008,6 +1108,7 @@ function CourseFormModal({ course, onClose, onSaved }) {
                     )}
                     {LEVEL_OPTIONS.map((level) => <option key={level} value={level}>{level}</option>)}
                   </select>
+                  {renderFieldError('level')}
                 </label>
                 <div className="md:col-span-2">
                   <div className="flex items-center justify-between gap-3">
@@ -1139,9 +1240,9 @@ function CourseFormModal({ course, onClose, onSaved }) {
                     </div>
                   </div>
                 </div>
-                <label className={`${labelClassName} md:col-span-2`} htmlFor="summary">
+                <label className={`${fieldLabelClassName('summary')} md:col-span-2`} htmlFor="summary">
                   <span className="flex items-center justify-between gap-3">
-                    <span>Resumen <span className="text-red-500">*</span></span>
+                    <span>Resumen <RequiredIndicator /></span>
                     <span className="text-xs font-normal tabular-nums text-slate-400">{values.summary.length} / 180 caracteres</span>
                   </span>
                   <span className="mt-0.5 block text-xs font-normal text-slate-500">
@@ -1149,7 +1250,7 @@ function CourseFormModal({ course, onClose, onSaved }) {
                   </span>
                   <textarea
                     aria-describedby="summary-character-count"
-                    className={`${inputClassName} min-h-20 rounded-xl px-3.5 py-2.5`}
+                    className={fieldInputClassName('summary', 'min-h-20 rounded-xl px-3.5 py-2.5')}
                     id="summary"
                     maxLength={180}
                     name="summary"
@@ -1157,28 +1258,32 @@ function CourseFormModal({ course, onClose, onSaved }) {
                     required
                     rows={2}
                     value={values.summary}
+                    {...fieldValidationProps('summary', 'summary-character-count')}
                   />
+                  {renderFieldError('summary')}
                   <span aria-live="polite" className="sr-only" id="summary-character-count">
                     {values.summary.length} / 180 caracteres
                   </span>
                 </label>
-                <label className={`${labelClassName} md:col-span-2`} htmlFor="description">
+                <label className={`${fieldLabelClassName('description')} md:col-span-2`} htmlFor="description">
                   <span className="flex items-center justify-between gap-3">
-                    <span>Descripción completa del curso <span className="text-red-500">*</span></span>
+                    <span>Descripción completa del curso <RequiredIndicator /></span>
                     <span className="text-xs font-normal tabular-nums text-slate-400">{values.description.length} caracteres</span>
                   </span>
                   <span className="mt-0.5 block text-xs font-normal text-slate-500">
                     Detalla el enfoque formativo, metodología y a quién va dirigido.
                   </span>
                   <textarea
-                    className={`${inputClassName} min-h-28 rounded-xl px-3.5 py-2.5`}
+                    className={fieldInputClassName('description', 'min-h-28 rounded-xl px-3.5 py-2.5')}
                     id="description"
                     name="description"
                     onChange={updateValue}
                     required
                     rows={3}
                     value={values.description}
+                    {...fieldValidationProps('description')}
                   />
+                  {renderFieldError('description')}
                 </label>
               </div>
             </section>
@@ -1201,10 +1306,16 @@ function CourseFormModal({ course, onClose, onSaved }) {
               </div>
 
               <div>
-                <p className="mb-3 block text-sm font-semibold text-slate-800">
-                  Modalidad <span className="text-red-500">*</span>
+                <p className={`mb-3 block text-sm font-semibold ${modalityErrors.type ? 'text-red-600' : 'text-slate-800'}`}>
+                  Modalidad <RequiredIndicator />
                 </p>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div
+                  aria-describedby={!modalityChoices.type && modalityErrors.type ? 'modality-type-error' : undefined}
+                  aria-invalid={Boolean(!modalityChoices.type && modalityErrors.type)}
+                  aria-label="Opciones de modalidad"
+                  className={`grid gap-3 rounded-xl sm:grid-cols-3 ${!modalityChoices.type && modalityErrors.type ? 'ring-1 ring-red-500 ring-offset-2' : ''}`}
+                  role="group"
+                >
                   {[
                     { value: 'EN VIVO', title: 'En Vivo', description: 'Sesiones en tiempo real con instructor', Icon: Radio },
                     { value: 'GRABADO', title: 'Grabado', description: 'Contenido para aprender a tu ritmo', Icon: Video },
@@ -1247,22 +1358,23 @@ function CourseFormModal({ course, onClose, onSaved }) {
                 </button>
                 {modalityChoices.type === OTHER_MODALITY_VALUE && (
                   <div className="mt-3 max-w-xl">
-                    <label className="block text-xs font-semibold text-slate-700" htmlFor="modality-type-custom">
-                      Nombre de la modalidad
+                    <label className={`block text-xs font-semibold ${modalityErrors.type ? 'text-red-600' : 'text-slate-700'}`} htmlFor="modality-type-custom">
+                      Nombre de la modalidad <RequiredIndicator />
                     </label>
                     <input
                       aria-invalid={Boolean(modalityErrors.type)}
-                      className={`${inputClassName} rounded-xl border-blue-200 bg-blue-50/30`}
+                      aria-describedby={modalityErrors.type ? 'modality-type-error' : undefined}
+                      className={`${inputClassName} rounded-xl ${modalityErrors.type ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : 'border-blue-200 bg-blue-50/30'}`}
                       id="modality-type-custom"
                       onChange={(event) => updateCustomModality('type', event.target.value)}
                       placeholder="Ej. Semipresencial"
                       value={customModality.type}
                     />
-                    {modalityErrors.type && <p className="mt-1 text-xs text-red-600" role="alert">{modalityErrors.type}</p>}
+                    {modalityErrors.type && <p className="mt-1 text-xs font-medium text-red-600" id="modality-type-error" role="alert">{modalityErrors.type}</p>}
                   </div>
                 )}
                 {!modalityChoices.type && modalityErrors.type && (
-                  <p className="mt-2 text-xs text-red-600" role="alert">{modalityErrors.type}</p>
+                  <p className="mt-2 text-xs font-medium text-red-600" id="modality-type-error" role="alert">{modalityErrors.type}</p>
                 )}
               </div>
 
@@ -1290,10 +1402,10 @@ function CourseFormModal({ course, onClose, onSaved }) {
                   {hasLiveSessions && (
                     <>
                       <div className="grid gap-4 sm:grid-cols-2">
-                        <label className={labelClassName} htmlFor="durationWeeks">
-                          Duración estimada (semanas)
+                        <label className={fieldLabelClassName('durationWeeks')} htmlFor="durationWeeks">
+                          Duración estimada (semanas) <RequiredIndicator />
                           <input
-                            className={`${inputClassName} rounded-xl px-3.5 py-2.5`}
+                            className={fieldInputClassName('durationWeeks', 'rounded-xl px-3.5 py-2.5')}
                             id="durationWeeks"
                             min="1"
                             name="durationWeeks"
@@ -1302,7 +1414,9 @@ function CourseFormModal({ course, onClose, onSaved }) {
                             step="1"
                             type="number"
                             value={values.durationWeeks}
+                            {...fieldValidationProps('durationWeeks')}
                           />
+                          {renderFieldError('durationWeeks')}
                         </label>
                         <div className="flex items-end">
                           <p className="text-xs leading-5 text-slate-500">
@@ -1319,8 +1433,16 @@ function CourseFormModal({ course, onClose, onSaved }) {
                           <p className="mt-1 text-xs text-slate-500">Selecciona los días y el horario de cada sesión.</p>
                         </div>
                         <div>
-                          <p className="mb-2 block text-sm font-medium text-slate-800">Días de clase</p>
-                          <div aria-label="Selecciona los días de clase" className="flex flex-wrap gap-2" role="group">
+                          <p className={`mb-2 block text-sm font-medium ${requiredFieldErrors.scheduleDays ? 'text-red-600' : 'text-slate-800'}`}>
+                            Días de clase <RequiredIndicator />
+                          </p>
+                          <div
+                            aria-describedby={requiredFieldErrors.scheduleDays ? 'scheduleDays-error' : undefined}
+                            aria-invalid={Boolean(requiredFieldErrors.scheduleDays)}
+                            aria-label="Selecciona los días de clase"
+                            className={`flex flex-wrap gap-2 rounded-lg ${requiredFieldErrors.scheduleDays ? 'ring-1 ring-red-500 ring-offset-2' : ''}`}
+                            role="group"
+                          >
                             {WEEK_DAYS.map(({ key, short, label }) => (
                               <button
                                 aria-pressed={selectedDays.includes(key)}
@@ -1338,31 +1460,36 @@ function CourseFormModal({ course, onClose, onSaved }) {
                               </button>
                             ))}
                           </div>
+                          {renderFieldError('scheduleDays')}
                         </div>
                         <div className="grid gap-4 sm:grid-cols-2">
-                          <label className={labelClassName} htmlFor="scheduleStartTime">
-                            Hora de inicio
+                          <label className={fieldLabelClassName('scheduleStartTime')} htmlFor="scheduleStartTime">
+                            Hora de inicio <RequiredIndicator />
                             <input
-                              className={`${inputClassName} rounded-xl px-3.5 py-2.5`}
+                              className={fieldInputClassName('scheduleStartTime', 'rounded-xl px-3.5 py-2.5')}
                               id="scheduleStartTime"
                               name="scheduleStartTime"
                               onChange={updateValue}
                               required
                               type="time"
                               value={values.scheduleStartTime}
+                              {...fieldValidationProps('scheduleStartTime')}
                             />
+                            {renderFieldError('scheduleStartTime')}
                           </label>
-                          <label className={labelClassName} htmlFor="scheduleEndTime">
-                            Hora de finalización
+                          <label className={fieldLabelClassName('scheduleEndTime')} htmlFor="scheduleEndTime">
+                            Hora de finalización <RequiredIndicator />
                             <input
-                              className={`${inputClassName} rounded-xl px-3.5 py-2.5`}
+                              className={fieldInputClassName('scheduleEndTime', 'rounded-xl px-3.5 py-2.5')}
                               id="scheduleEndTime"
                               name="scheduleEndTime"
                               onChange={updateValue}
                               required
                               type="time"
                               value={values.scheduleEndTime}
+                              {...fieldValidationProps('scheduleEndTime')}
                             />
+                            {renderFieldError('scheduleEndTime')}
                           </label>
                         </div>
                         {isLiveModality && (
@@ -1393,21 +1520,29 @@ function CourseFormModal({ course, onClose, onSaved }) {
                         <p className="mt-1 text-xs text-slate-500">Indica las horas estimadas de contenido.</p>
                       </div>
                       <div className="grid gap-4 sm:grid-cols-2">
-                        <label className={labelClassName} htmlFor="recordedContentHours">
-                          Horas estimadas
+                        <label className={fieldLabelClassName('recordedContentHours')} htmlFor="recordedContentHours">
+                          Horas estimadas <RequiredIndicator />
                           <input
-                            className={`${inputClassName} rounded-xl px-3.5 py-2.5`}
+                            className={fieldInputClassName('recordedContentHours', 'rounded-xl px-3.5 py-2.5')}
                             id="recordedContentHours"
                             min="0"
-                            onChange={(event) => setValues((current) => ({
-                              ...current,
-                              recordedContentHours: event.target.value,
-                            }))}
+                            onChange={(event) => {
+                              const hours = event.target.value
+                              setValues((current) => ({ ...current, recordedContentHours: hours }))
+                              if (
+                                Number(hours || 0) * 60 +
+                                Number(values.recordedContentRemainderMinutes || 0) > 0
+                              ) {
+                                clearRequiredFieldError('recordedContentHours')
+                              }
+                            }}
                             required
                             step="1"
                             type="number"
                             value={values.recordedContentHours}
+                            {...fieldValidationProps('recordedContentHours')}
                           />
+                          {renderFieldError('recordedContentHours')}
                         </label>
                         <label className={labelClassName} htmlFor="recordedContentRemainderMinutes">
                           Minutos adicionales (opcional)
@@ -1416,10 +1551,19 @@ function CourseFormModal({ course, onClose, onSaved }) {
                             id="recordedContentRemainderMinutes"
                             max="59"
                             min="0"
-                            onChange={(event) => setValues((current) => ({
-                              ...current,
-                              recordedContentRemainderMinutes: event.target.value,
-                            }))}
+                            onChange={(event) => {
+                              const minutes = event.target.value
+                              setValues((current) => ({
+                                ...current,
+                                recordedContentRemainderMinutes: minutes,
+                              }))
+                              if (
+                                Number(values.recordedContentHours || 0) * 60 +
+                                Number(minutes || 0) > 0
+                              ) {
+                                clearRequiredFieldError('recordedContentHours')
+                              }
+                            }}
                             step="1"
                             type="number"
                             value={values.recordedContentRemainderMinutes}
@@ -1764,16 +1908,23 @@ function CourseFormModal({ course, onClose, onSaved }) {
                     {module.isExpanded !== false && (
                       <div className="space-y-4 p-4 sm:p-5" id={`module-content-${moduleIndex}`}>
                         <div className="grid min-w-0 gap-4">
-                          <label className={labelClassName} htmlFor={`moduleTitle-${moduleIndex}`}>
-                            Título del módulo
+                          <label className={fieldLabelClassName(`moduleTitle-${moduleIndex}`)} htmlFor={`moduleTitle-${moduleIndex}`}>
+                            Título del módulo <RequiredIndicator />
                             <input
-                              className={`${inputClassName} rounded-xl`}
+                              className={fieldInputClassName(`moduleTitle-${moduleIndex}`, 'rounded-xl')}
                               disabled={saving}
                               id={`moduleTitle-${moduleIndex}`}
-                              onChange={(event) => updateModule(moduleIndex, 'title', event.target.value)}
+                              onChange={(event) => {
+                                updateModule(moduleIndex, 'title', event.target.value)
+                                if (event.currentTarget.value.trim()) {
+                                  clearRequiredFieldError(`moduleTitle-${moduleIndex}`)
+                                }
+                              }}
                               required
                               value={module.title}
+                              {...fieldValidationProps(`moduleTitle-${moduleIndex}`)}
                             />
+                            {renderFieldError(`moduleTitle-${moduleIndex}`)}
                           </label>
                         </div>
                         <div className="space-y-3 border-t border-slate-100 pt-4">
