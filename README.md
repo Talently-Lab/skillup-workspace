@@ -1,5 +1,7 @@
 # 🚀 SkillUp Campus - Plataforma Web EdTech (MVP)
 
+![Preview de SkillUp Campus](./docs/images/preview.jpeg)
+
 ¡Bienvenidos a **SkillUp Campus**! Este repositorio contiene el desarrollo de una solución tecnológica diseñada para transformar la gestión operativa de una startup de educación tecnológica (EdTech) en pleno crecimiento.
 
 El proyecto simula un entorno de desarrollo real y profesional, abordando desde la investigación de usuarios y diseño UX/UI, hasta la programación, pruebas de calidad (QA) y gestión ágil del producto en un plazo estricto de 8 semanas.
